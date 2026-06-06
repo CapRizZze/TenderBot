@@ -22,6 +22,27 @@ enum TenderSource {
   unknown
 }
 
+enum SabyRequestStatus {
+  success
+  empty
+  error
+  daily_limit
+  blocked
+}
+
+enum SearchProfileRuleType {
+  positive
+  negative
+  hard_exclude
+  instruction
+}
+
+enum TenderScoreVerdict {
+  relevant
+  maybe
+  irrelevant
+}
+
 model User {
   id            String         @id @default(cuid())
   name          String?
@@ -34,6 +55,10 @@ model User {
   sessions      Session[]
   conversations Conversation[]
   keywords      UserKeyword[]
+  sabyRequests  SabyRequestLog[]
+  sabyApiCalls  SabyApiCallLog[]
+  searchProfiles SearchProfile[]
+  tenderRequestNames TenderRequestName[]
 
   @@map("users")
 }
@@ -79,22 +104,138 @@ model VerificationToken {
 }
 
 model Tender {
-  id            String         @id @default(cuid())
-  externalId    String         @unique
+  id            String              @id @default(cuid())
+  externalId    String              @unique
+  number        String?
   title         String
   description   String
   customer      String
+  placedAt      DateTime?
   deadline      DateTime
   budget        Decimal?
   url           String
-  source        TenderSource   @default(unknown)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  sourceUrl     String?
+  sabyUrl       String?
+  source        TenderSource        @default(unknown)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
   conversations Conversation[]
+  attachments   TenderAttachment[]
+  requestNames  TenderRequestName[]
+  profileScores TenderProfileScore[]
 
   @@index([deadline])
+  @@index([placedAt])
   @@index([customer])
+  @@index([number])
   @@map("tenders")
+}
+
+model SearchProfile {
+  id           String                     @id @default(cuid())
+  userId       String
+  name         String
+  description  String
+  scoringPrompt String
+  isDefault    Boolean                    @default(false)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestNames SearchProfileRequestName[]
+  rules        SearchProfileRule[]
+  scores       TenderProfileScore[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("search_profiles")
+}
+
+model SearchProfileRequestName {
+  id              String        @id @default(cuid())
+  searchProfileId String
+  requestName     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  searchProfile   SearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([searchProfileId, requestName])
+  @@index([requestName])
+  @@index([searchProfileId])
+  @@map("search_profile_request_names")
+}
+
+model SearchProfileRule {
+  id              String                @id @default(cuid())
+  searchProfileId String
+  type            SearchProfileRuleType
+  value           String
+  weight          Int                   @default(1)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  searchProfile   SearchProfile         @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+
+  @@index([searchProfileId, type])
+  @@map("search_profile_rules")
+}
+
+model TenderProfileScore {
+  id              String             @id @default(cuid())
+  tenderId        String
+  searchProfileId String
+  score           Int
+  verdict         TenderScoreVerdict
+  userVerdict     TenderScoreVerdict?
+  userComment     String?
+  reasons         Json
+  positiveSignals Json?
+  negativeSignals Json?
+  suggestedRules  Json?
+  model           String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  tender          Tender             @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  searchProfile   SearchProfile      @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([tenderId, searchProfileId])
+  @@index([searchProfileId, verdict, score])
+  @@index([tenderId])
+  @@map("tender_profile_scores")
+}
+
+model TenderAttachment {
+  id                    String    @id @default(cuid())
+  tenderId              String
+  name                  String
+  url                   String
+  mimeType              String?
+  size                  Int?
+  extractedText         String?
+  extractedTextAt       DateTime?
+  extractedTextError    String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  tender                Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@unique([tenderId, url])
+  @@index([tenderId])
+  @@map("tender_attachments")
+}
+
+model TenderRequestName {
+  id          String   @id @default(cuid())
+  tenderId    String
+  userId      String?
+  requestName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tender      Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenderId, requestName])
+  @@index([requestName])
+  @@index([tenderId])
+  @@index([userId, requestName])
+  @@map("tender_request_names")
 }
 
 model Conversation {
@@ -139,4 +280,51 @@ model UserKeyword {
   @@unique([userId, value])
   @@index([value])
   @@map("user_keywords")
+}
+
+model SabyRequestLog {
+  id          String            @id @default(cuid())
+  userId      String?
+  requestName String
+  method      String
+  status      SabyRequestStatus
+  tenderCount Int               @default(0)
+  error       String?
+  createdAt   DateTime          @default(now())
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([requestName, createdAt])
+  @@index([status, createdAt])
+  @@map("saby_request_logs")
+}
+
+model SabyApiCallLog {
+  id                 String    @id @default(cuid())
+  userId             String?
+  operation          String
+  method             String
+  endpoint           String
+  requestName        String?
+  tenderExternalId   String?
+  tenderNumber       String?
+  status             String
+  httpStatus         Int?
+  durationMs         Int
+  usedRequests       Int?
+  dayCounterBefore   Int?
+  dayCounterAfter    Int?
+  dayRemainingBefore Int?
+  dayRemainingAfter  Int?
+  payloadSummary     Json?
+  responseSummary    Json?
+  error              String?
+  createdAt          DateTime  @default(now())
+  user               User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([operation, createdAt])
+  @@index([method, createdAt])
+  @@index([requestName, createdAt])
+  @@map("saby_api_call_logs")
 }

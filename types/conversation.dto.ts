@@ -32,18 +32,7 @@ export const conversationListResponseSchema = z.object({
   conversations: z.array(conversationListItemDtoSchema),
 });
 
-export type ConversationMessageDto = z.infer<
-  typeof conversationMessageDtoSchema
->;
-
-export type ConversationHistoryResponseDto = z.infer<
-  typeof conversationHistoryResponseSchema
->;
-
-export type ConversationListItemDto = z.infer<
-  typeof conversationListItemDtoSchema
->;
-
-export type ConversationListResponseDto = z.infer<
-  typeof conversationListResponseSchema
->;
+export type ConversationMessageDto = z.infer<typeof conversationMessageDtoSchema>;
+export type ConversationHistoryResponseDto = z.infer<typeof conversationHistoryResponseSchema>;
+export type ConversationListItemDto = z.infer<typeof conversationListItemDtoSchema>;
+export type ConversationListResponseDto = z.infer<typeof conversationListResponseSchema>;

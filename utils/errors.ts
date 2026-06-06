@@ -37,5 +37,9 @@ export function getApiErrorStatus(error: unknown): number {
     return 400;
   }
 
+  if (error instanceof Error && error.name === "SabyDailyLimitError") {
+    return 429;
+  }
+
   return 500;
 }

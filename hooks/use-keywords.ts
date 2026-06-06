@@ -40,7 +40,7 @@ export function useKeywords(initialKeywords: KeywordDto[] = []) {
         throw new Error(
           await getErrorMessageFromResponse(
             response,
-            "Не удалось загрузить ключевые слова",
+            "Не удалось загрузить список RequestName",
           ),
         );
       }
@@ -87,7 +87,7 @@ export function useKeywords(initialKeywords: KeywordDto[] = []) {
         throw new Error(
           await getErrorMessageFromResponse(
             response,
-            "Не удалось сохранить ключевые слова",
+            "Не удалось сохранить список RequestName",
           ),
         );
       }
@@ -134,5 +134,5 @@ function getErrorMessage(error: unknown): string {
     return error.message;
   }
 
-  return "Неизвестная ошибка ключевых слов";
+  return "Неизвестная ошибка при работе со списком RequestName";
 }

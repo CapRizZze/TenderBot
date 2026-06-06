@@ -1,3 +1,4 @@
+import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -17,8 +18,11 @@ interface SignInPageProps {
   };
 }
 
+const isDevAuthEnabled = process.env.NODE_ENV !== "production";
+
 export default function SignInPage({ searchParams }: SignInPageProps) {
   const hasError = Boolean(searchParams?.error);
+  const errorMessage = getSignInErrorMessage(searchParams?.error);
   const redirectTo = getSafeRedirectTo(searchParams?.callbackUrl);
 
   async function requestEmailOtp(formData: FormData) {
@@ -32,10 +36,43 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
       redirect("/sign-in?error=invalid-email");
     }
 
-    await signIn("nodemailer", {
-      email: parsedData.data.email,
-      redirectTo,
+    try {
+      await signIn("nodemailer", {
+        email: parsedData.data.email,
+        redirectTo,
+      });
+    } catch (error) {
+      if (error instanceof AuthError) {
+        redirect("/sign-in?error=email-send-failed");
+      }
+
+      throw error;
+    }
+  }
+
+  async function requestDevSignIn(formData: FormData) {
+    "use server";
+
+    const parsedData = signInSchema.safeParse({
+      email: formData.get("email"),
     });
+
+    if (!parsedData.success) {
+      redirect("/sign-in?error=invalid-email");
+    }
+
+    try {
+      await signIn("dev-credentials", {
+        email: parsedData.data.email,
+        redirectTo,
+      });
+    } catch (error) {
+      if (error instanceof AuthError) {
+        redirect("/sign-in?error=dev-login-failed");
+      }
+
+      throw error;
+    }
   }
 
   return (
@@ -68,7 +105,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
 
           {hasError ? (
             <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              Проверьте email и попробуйте снова.
+              {errorMessage}
             </p>
           ) : null}
 
@@ -76,6 +113,24 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
             Получить ссылку для входа
           </Button>
         </form>
+
+        {isDevAuthEnabled ? (
+          <form action={requestDevSignIn} className="mt-4 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              В dev-режиме можно войти без почты. Используется тот же email,
+              который вы введёте выше.
+            </p>
+            <Input
+              name="email"
+              placeholder="name@company.ru"
+              required
+              type="email"
+            />
+            <Button className="w-full" type="submit" variant="secondary">
+              Войти без почты
+            </Button>
+          </form>
+        ) : null}
       </section>
     </main>
   );
@@ -93,4 +148,20 @@ function getSafeRedirectTo(callbackUrl?: string): string {
   } catch {
     return callbackUrl.startsWith("/") ? callbackUrl : "/";
   }
+}
+
+function getSignInErrorMessage(error?: string): string {
+  if (error === "invalid-email") {
+    return "Проверьте email и попробуйте снова.";
+  }
+
+  if (error === "email-send-failed" || error === "Configuration") {
+    return "Не удалось отправить письмо. SMTP недоступен или не проходит DNS/сетевое соединение до smtp.yandex.ru.";
+  }
+
+  if (error === "dev-login-failed") {
+    return "Не удалось выполнить dev-вход. Проверьте email и повторите попытку.";
+  }
+
+  return "Не удалось выполнить вход. Попробуйте снова.";
 }

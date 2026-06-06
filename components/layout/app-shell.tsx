@@ -1,30 +1,65 @@
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { Sidebar } from "@/components/layout/sidebar";
 import type { KeywordDto } from "@/types/keyword.dto";
-import type { Tender } from "@/types/tender-parser.dto";
+import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
+import type { SearchProfileDto } from "@/types/search-profile.dto";
+import type {
+  SabyDailyLimitStatistics,
+  Tender,
+} from "@/types/tender-parser.dto";
 
 interface AppShellProps {
-  tenders: Tender[];
   initialKeywords: KeywordDto[];
+  tenders: Tender[];
+  activeTender?: Tender;
+  requestNames: string[];
+  availableRequestNames: string[];
+  activeRequestName: string;
+  searchProfiles: SearchProfileDto[];
+  activeSearchProfile?: SearchProfileDto;
+  recentSabyApiCalls: SabyApiCallLogEntry[];
+  sabyDailyLimitStatistics?: SabyDailyLimitStatistics | null;
+  tendersLoadError?: string | null;
   activeTenderId?: string;
 }
 
 export function AppShell({
-  tenders,
   initialKeywords,
+  tenders,
+  activeTender,
+  requestNames,
+  availableRequestNames,
+  activeRequestName,
+  searchProfiles,
+  activeSearchProfile,
+  recentSabyApiCalls,
+  sabyDailyLimitStatistics,
+  tendersLoadError,
   activeTenderId,
 }: AppShellProps) {
-  const activeTender =
-    tenders.find((tender) => tender.id === activeTenderId) ?? tenders[0];
+  const resolvedActiveTender =
+    activeTender ??
+    tenders.find((tender) => tender.id === activeTenderId);
 
   return (
-    <main className="flex h-screen min-h-0 flex-col bg-background text-foreground md:flex-row">
+    <main className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-background text-foreground md:flex-row">
       <Sidebar
-        activeTenderId={activeTender?.id}
+        activeTenderId={resolvedActiveTender?.id}
+        activeRequestName={activeRequestName}
+        activeSearchProfile={activeSearchProfile}
+        availableRequestNames={availableRequestNames}
         initialKeywords={initialKeywords}
+        recentSabyApiCalls={recentSabyApiCalls}
+        requestNames={requestNames}
+        sabyDailyLimitStatistics={sabyDailyLimitStatistics}
+        searchProfiles={searchProfiles}
+        tendersLoadError={tendersLoadError}
         tenders={tenders}
       />
-      <ChatPanel key={activeTender?.id ?? "empty"} tender={activeTender} />
+      <ChatPanel
+        activeSearchProfile={activeSearchProfile}
+        tender={resolvedActiveTender}
+      />
     </main>
   );
 }

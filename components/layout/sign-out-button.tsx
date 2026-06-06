@@ -1,23 +1,22 @@
-import { LogOut } from "lucide-react";
+"use client";
 
-import { signOut } from "@/auth";
+import { LogOut } from "lucide-react";
+import { signOut } from "next-auth/react";
+
 import { Button } from "@/components/ui/button";
 
 export function SignOutButton() {
-  async function handleSignOut() {
-    "use server";
-
-    await signOut({
-      redirectTo: "/sign-in",
-    });
-  }
-
   return (
-    <form action={handleSignOut}>
-      <Button className="h-9 gap-2" size="sm" type="submit" variant="outline">
-        <LogOut className="h-4 w-4" />
-        <span>Выйти</span>
-      </Button>
-    </form>
+    <Button
+      aria-label="Выйти"
+      className="h-9 gap-2"
+      onClick={() => void signOut({ callbackUrl: "/sign-in" })}
+      size="sm"
+      type="button"
+      variant="outline"
+    >
+      <LogOut className="h-4 w-4" />
+      <span>Выйти</span>
+    </Button>
   );
 }

@@ -6,6 +6,7 @@ const authConfig = {
   pages: {
     signIn: "/sign-in",
     verifyRequest: "/verify-request",
+    error: "/sign-in",
   },
   providers: [],
   callbacks: {

@@ -1,0 +1,6 @@
+{
+  "email": "caprizzze@yandex.ru",
+  "url": "http://localhost:3000/api/auth/callback/nodemailer?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2F&token=96d0b5734e469963772e7b6c9e438c9238189c306fc17d3a315cd0d73eb8a77d&email=caprizzze%40yandex.ru",
+  "createdAt": "2026-06-03T16:26:48.463Z",
+  "error": "SMTP bypassed in local development mode"
+}

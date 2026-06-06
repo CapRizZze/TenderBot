@@ -2,27 +2,41 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { streamText, type CoreMessage } from "ai";
 import { NextResponse } from "next/server";
 
-import { getQwenEnv } from "@/lib/env";
+import { buildTenderConversationTitle } from "@/lib/conversation-title";
+import { getDeepSeekEnv } from "@/lib/env";
 import {
   createConversationMessage,
   ensureConversation,
+  updateConversationMessageContent,
 } from "@/lib/repositories/conversationRepository";
-import { upsertTenderFromParserDto } from "@/lib/repositories/tenderRepository";
+import {
+  findCachedTenderByExternalId,
+  findStoredTenderByExternalId,
+} from "@/lib/repositories/tenderRepository";
+import {
+  filterAllowedAttachments,
+  limitAttachmentContentsForPrompt,
+} from "@/lib/services/chatAttachmentPolicy";
+import {
+  buildChatSystemMessage,
+  findLastUserMessage,
+} from "@/lib/services/chatRoutePresentation";
+import { getOrFetchTenderAttachmentContents } from "@/lib/services/tenderAttachmentContentService";
 import { chatRequestDtoSchema } from "@/types/chat.dto";
 import { createUnauthorizedResponse, getCurrentUser } from "@/utils/auth";
-import {
-  getApiErrorStatus,
-  toApiErrorResponse,
-} from "@/utils/errors";
+import { getApiErrorStatus, toApiErrorResponse } from "@/utils/errors";
 
 export const runtime = "nodejs";
 
-const qwenEnv = getQwenEnv();
+const ASSISTANT_PLACEHOLDER_TEXT =
+  "Ответ формируется. Если генерация оборвется, запустите запрос повторно.";
 
-const qwen = createOpenAICompatible({
-  name: "qwen",
-  apiKey: qwenEnv.QWEN_API_KEY,
-  baseURL: qwenEnv.QWEN_BASE_URL,
+const deepSeekEnv = getDeepSeekEnv();
+
+const deepSeek = createOpenAICompatible({
+  name: "deepseek",
+  apiKey: deepSeekEnv.DEEPSEEK_API_KEY,
+  baseURL: deepSeekEnv.DEEPSEEK_BASE_URL,
 });
 
 export async function POST(request: Request) {
@@ -34,29 +48,53 @@ export async function POST(request: Request) {
     }
 
     const body: unknown = await request.json();
-    const { clientMessageId, tender, messages } =
+    const { clientMessageId, tender, selectedAttachments, messages } =
       chatRequestDtoSchema.parse(body);
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((message) => message.role === "user");
+    const lastUserMessage = findLastUserMessage(messages);
 
     if (!lastUserMessage) {
       return NextResponse.json(
         {
           error: {
-            message: "В запросе нет пользовательского сообщения",
+            message: "User message is required",
           },
         },
         { status: 400 },
       );
     }
 
-    const savedTender = await upsertTenderFromParserDto(tender);
+    const savedTender = await findCachedTenderByExternalId(tender.id, currentUser.id);
+    const storedTender = await findStoredTenderByExternalId(tender.id, currentUser.id);
+
+    if (!savedTender || !storedTender || storedTender.requestNames.length === 0) {
+      return NextResponse.json(
+        {
+          error: {
+            message:
+              "Тендер не найден в локальной базе. Сначала обновите кэш и откройте тендер заново.",
+          },
+        },
+        { status: 404 },
+      );
+    }
+
+    const validatedSelectedAttachments = filterAllowedAttachments(
+      savedTender.attachments,
+      selectedAttachments,
+    );
+
     const conversation = await ensureConversation({
       userId: currentUser.id,
-      tenderId: savedTender.id,
-      title: tender.title,
+      tenderId: storedTender.id,
+      title: buildTenderConversationTitle(savedTender),
     });
+
+    const selectedAttachmentContents = limitAttachmentContentsForPrompt(
+      await getOrFetchTenderAttachmentContents(
+        savedTender.id,
+        validatedSelectedAttachments,
+      ),
+    );
 
     await createConversationMessage({
       conversationId: conversation.id,
@@ -65,26 +103,21 @@ export async function POST(request: Request) {
       clientMessageId,
     });
 
-    const systemMessage: CoreMessage = {
-      role: "system",
-      content: [
-        "Ты AI Tender Bot, эксперт по анализу государственных и коммерческих торгов.",
-        "Отвечай на русском языке, структурно и практично.",
-        "Анализируй требования, риски, сроки, бюджет, заказчика и вероятность соответствия участника.",
-        "Не выдумывай факты: если данных тендера недостаточно, явно укажи, что нужно уточнить.",
-        "",
-        "Контекст тендера:",
-        `Название: ${tender.title}`,
-        `Заказчик: ${tender.customer}`,
-        `Описание: ${tender.description}`,
-        `Дедлайн: ${tender.deadline}`,
-        `Бюджет: ${typeof tender.budget === "number" ? tender.budget : "не указан"}`,
-        `Ссылка: ${tender.url}`,
-      ].join("\n"),
-    };
+    const assistantMessage = await createConversationMessage({
+      conversationId: conversation.id,
+      role: "assistant",
+      content: ASSISTANT_PLACEHOLDER_TEXT,
+      clientMessageId: clientMessageId ? `${clientMessageId}:assistant` : undefined,
+    });
+
+    const systemMessage: CoreMessage = buildChatSystemMessage(
+      savedTender,
+      validatedSelectedAttachments,
+      selectedAttachmentContents,
+    );
 
     const result = await streamText({
-      model: qwen(qwenEnv.QWEN_MODEL),
+      model: deepSeek(deepSeekEnv.DEEPSEEK_MODEL),
       messages: [
         systemMessage,
         ...messages.map(
@@ -101,9 +134,8 @@ export async function POST(request: Request) {
           return;
         }
 
-        await createConversationMessage({
-          conversationId: conversation.id,
-          role: "assistant",
+        await updateConversationMessageContent({
+          messageId: assistantMessage.id,
           content,
         });
       },

@@ -1,0 +1,5 @@
+{
+  "/page": "app/page.js",
+  "/api/conversations/route": "app/api/conversations/route.js",
+  "/api/conversations/[tenderExternalId]/route": "app/api/conversations/[tenderExternalId]/route.js"
+}

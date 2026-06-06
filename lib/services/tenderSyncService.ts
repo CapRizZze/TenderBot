@@ -2,15 +2,17 @@ import { upsertTenderFromParserDto } from "@/lib/repositories/tenderRepository";
 import type { Tender } from "@/types/tender-parser.dto";
 
 export interface ITenderSyncService {
-  syncParsedTenders(tenders: Tender[]): Promise<Tender[]>;
+  syncParsedTenders(userId: string, requestName: string, tenders: Tender[]): Promise<Tender[]>;
 }
 
 export class TenderSyncService implements ITenderSyncService {
-  async syncParsedTenders(tenders: Tender[]): Promise<Tender[]> {
-    // Синхронизация не меняет DTO парсера: UI продолжает работать с внешним
-    // контрактом, а PostgreSQL получает актуальную копию найденных тендеров.
+  async syncParsedTenders(
+    userId: string,
+    requestName: string,
+    tenders: Tender[],
+  ): Promise<Tender[]> {
     await Promise.all(
-      tenders.map((tender) => upsertTenderFromParserDto(tender)),
+      tenders.map((tender) => upsertTenderFromParserDto(tender, requestName, userId)),
     );
 
     return tenders;

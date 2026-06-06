@@ -1,0 +1,20 @@
+HTTP/1.1 403 Forbidden
+Date: Mon, 18 May 2026 10:05:04 GMT
+Content-Type: application/json; charset=utf-8
+Content-Length: 97
+Connection: keep-alive
+Keep-Alive: timeout=30
+X-UNIQ-ID: 3598d98d-f882-8135-93e1-acab23465d69
+X-EXCEPTIONTYPE: warning
+X-RequestUUID: af149b2a-35f9-10f6-8df5-b34f069ff238
+Vary: Accept-Encoding, Origin
+X-SBISSessionID: 0281f793-0281f794-0bba-019e3a8963b87934
+Set-Cookie: sid=0281f793-0281f794-0bba-019e3a8963b87934; expires=Tue, 18-May-27 10:05:04 GMT; path=/; Secure; HttpOnly; SameSite=None
+Cache-Control: no-store, max-age=0
+Set-Cookie: s3sid-online-daab=0281f793-0281f794-0bba-019e3a8963b87934; expires=Tue, 18-May-27 10:05:04 GMT; domain=.sbis.ru; path=/; Secure; HttpOnly; SameSite=None
+Set-Cookie: s3su=0281f793-0281f794; expires=Tue, 18-May-27 10:05:04 GMT; path=/; Secure; SameSite=None
+Set-Cookie: lang=ru; expires=Tue, 18-May-27 10:05:04 GMT; path=/; Secure; SameSite=None
+Set-Cookie: region=RU; expires=Tue, 18-May-27 10:05:04 GMT; path=/; Secure; SameSite=None
+X-SbisTracker: ur_au:0.001,rwrend:0.002,opt0:0.000,opt1:0.000,hdrend:0.003
+Strict-Transport-Security: max-age=31536000;
+

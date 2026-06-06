@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   type ConversationHistoryResponseDto,
@@ -16,6 +16,7 @@ interface UseConversationHistoryState {
 }
 
 export function useConversationHistory(tenderExternalId?: string) {
+  const requestIdRef = useRef(0);
   const [state, setState] = useState<UseConversationHistoryState>({
     conversationId: null,
     messages: [],
@@ -23,7 +24,9 @@ export function useConversationHistory(tenderExternalId?: string) {
     errorMessage: null,
   });
 
-  const loadHistory = useCallback(async () => {
+  async function loadHistory() {
+    const requestId = ++requestIdRef.current;
+
     if (!tenderExternalId) {
       setState({
         conversationId: null,
@@ -58,6 +61,10 @@ export function useConversationHistory(tenderExternalId?: string) {
       const data: unknown = await response.json();
       const parsedData = conversationHistoryResponseSchema.parse(data);
 
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+
       setState({
         conversationId: parsedData.conversationId,
         messages: parsedData.messages,
@@ -65,6 +72,10 @@ export function useConversationHistory(tenderExternalId?: string) {
         errorMessage: null,
       });
     } catch (error) {
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+
       setState((currentState) => ({
         ...currentState,
         isLoading: false,
@@ -74,11 +85,11 @@ export function useConversationHistory(tenderExternalId?: string) {
             : "Неизвестная ошибка истории диалога",
       }));
     }
-  }, [tenderExternalId]);
+  }
 
   useEffect(() => {
     void loadHistory();
-  }, [loadHistory]);
+  }, [tenderExternalId]);
 
   return {
     ...state,

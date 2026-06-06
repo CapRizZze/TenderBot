@@ -15,6 +15,11 @@ interface CreateMessageInput {
   clientMessageId?: string;
 }
 
+interface UpdateMessageContentInput {
+  messageId: string;
+  content: string;
+}
+
 export async function ensureConversation({
   userId,
   tenderId,
@@ -72,6 +77,33 @@ export async function createConversationMessage({
     await transaction.conversation.update({
       where: {
         id: conversationId,
+      },
+      data: {
+        updatedAt: new Date(),
+      },
+    });
+
+    return message;
+  });
+}
+
+export async function updateConversationMessageContent({
+  messageId,
+  content,
+}: UpdateMessageContentInput): Promise<Message> {
+  return prisma.$transaction(async (transaction) => {
+    const message = await transaction.message.update({
+      where: {
+        id: messageId,
+      },
+      data: {
+        content,
+      },
+    });
+
+    await transaction.conversation.update({
+      where: {
+        id: message.conversationId,
       },
       data: {
         updatedAt: new Date(),

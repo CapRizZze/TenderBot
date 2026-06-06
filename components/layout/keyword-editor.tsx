@@ -3,7 +3,7 @@
 import { Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,14 +13,22 @@ import type { KeywordDto } from "@/types/keyword.dto";
 
 interface KeywordEditorProps {
   initialKeywords: KeywordDto[];
+  availableRequestNames: string[];
 }
 
-export function KeywordEditor({ initialKeywords }: KeywordEditorProps) {
+export function KeywordEditor({
+  initialKeywords,
+  availableRequestNames,
+}: KeywordEditorProps) {
   const router = useRouter();
   const { keywords, isLoading, isSaving, errorMessage, saveKeywords } =
     useKeywords(initialKeywords);
   const [draft, setDraft] = useState(() =>
     initialKeywords.map((keyword) => keyword.value).join(", "),
+  );
+  const placeholder = useMemo(
+    () => availableRequestNames.join(", "),
+    [availableRequestNames],
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -44,31 +52,20 @@ export function KeywordEditor({ initialKeywords }: KeywordEditorProps) {
   return (
     <form className="space-y-3" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <Label htmlFor="keywords">
-          Ключевые слова
-        </Label>
+        <Label htmlFor="keywords">Список RequestName для отслеживания</Label>
+        <p className="text-xs text-muted-foreground">
+          Указывайте только реальные RequestName из конфигурации Saby через запятую.
+          Сейчас доступны: {availableRequestNames.join(", ")}.
+        </p>
         <Textarea
           className="resize-none"
           disabled={isLoading || isSaving}
           id="keywords"
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="серверы, аналитика, поддержка"
+          placeholder={placeholder}
           value={draft}
         />
       </div>
-
-      {keywordValues.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {keywordValues.map((keyword) => (
-            <span
-              className="rounded-md border bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
-              key={keyword}
-            >
-              {keyword}
-            </span>
-          ))}
-        </div>
-      ) : null}
 
       {errorMessage ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -80,6 +77,12 @@ export function KeywordEditor({ initialKeywords }: KeywordEditorProps) {
         <Save className="h-4 w-4" />
         <span>{isSaving ? "Сохранение" : "Сохранить"}</span>
       </Button>
+
+      {keywordValues.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Сейчас сохранено: {keywordValues.join(", ")}
+        </p>
+      ) : null}
     </form>
   );
 }

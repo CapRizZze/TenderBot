@@ -3,10 +3,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { createUnauthorizedResponse, getCurrentUser } from "@/utils/auth";
-import {
-  getApiErrorStatus,
-  toApiErrorResponse,
-} from "@/utils/errors";
+import { getApiErrorStatus, toApiErrorResponse } from "@/utils/errors";
 
 const routeParamsSchema = z.object({
   tenderExternalId: z.string().min(1, "Идентификатор тендера обязателен"),
@@ -18,10 +15,7 @@ interface ConversationRouteContext {
   };
 }
 
-export async function GET(
-  _request: Request,
-  context: ConversationRouteContext,
-) {
+export async function GET(_request: Request, context: ConversationRouteContext) {
   try {
     const currentUser = await getCurrentUser();
 
@@ -83,6 +77,43 @@ export async function GET(
         createdAt: message.createdAt.toISOString(),
       })),
     });
+  } catch (error) {
+    return NextResponse.json(toApiErrorResponse(error), {
+      status: getApiErrorStatus(error),
+    });
+  }
+}
+
+export async function DELETE(_request: Request, context: ConversationRouteContext) {
+  try {
+    const currentUser = await getCurrentUser();
+
+    if (!currentUser) {
+      return createUnauthorizedResponse();
+    }
+
+    const { tenderExternalId } = routeParamsSchema.parse(context.params);
+    const tender = await prisma.tender.findUnique({
+      where: {
+        externalId: tenderExternalId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!tender) {
+      return NextResponse.json({ deleted: false });
+    }
+
+    await prisma.conversation.deleteMany({
+      where: {
+        userId: currentUser.id,
+        tenderId: tender.id,
+      },
+    });
+
+    return NextResponse.json({ deleted: true });
   } catch (error) {
     return NextResponse.json(toApiErrorResponse(error), {
       status: getApiErrorStatus(error),

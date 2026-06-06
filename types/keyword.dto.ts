@@ -3,14 +3,14 @@ import { z } from "zod";
 export const keywordValueSchema = z
   .string()
   .trim()
-  .min(2, "Ключевое слово должно содержать минимум 2 символа")
-  .max(80, "Ключевое слово должно быть короче 80 символов");
+  .min(2, "RequestName должен содержать минимум 2 символа")
+  .max(80, "RequestName должен быть короче 80 символов");
 
 export const updateKeywordsRequestSchema = z.object({
   keywords: z
     .array(keywordValueSchema)
-    .min(1, "Добавьте хотя бы одно ключевое слово")
-    .max(20, "Для MVP доступно не более 20 ключевых слов"),
+    .min(1, "Добавьте хотя бы один RequestName")
+    .max(20, "Для MVP доступно не более 20 RequestName"),
 });
 
 export const keywordDtoSchema = z.object({
@@ -24,9 +24,5 @@ export const keywordsResponseSchema = z.object({
 });
 
 export type KeywordDto = z.infer<typeof keywordDtoSchema>;
-
-export type UpdateKeywordsRequestDto = z.infer<
-  typeof updateKeywordsRequestSchema
->;
-
+export type UpdateKeywordsRequestDto = z.infer<typeof updateKeywordsRequestSchema>;
 export type KeywordsResponseDto = z.infer<typeof keywordsResponseSchema>;

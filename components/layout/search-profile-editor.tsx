@@ -1,0 +1,314 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+
+import type { SearchProfileDto } from "@/types/search-profile.dto";
+import { getErrorMessageFromResponse } from "@/utils/api-client";
+
+interface SearchProfileEditorProps {
+  profile?: SearchProfileDto;
+  availableRequestNames: string[];
+}
+
+type RuleBuckets = {
+  positive: string;
+  negative: string;
+  hardExclude: string;
+  instruction: string;
+};
+
+function toRuleBuckets(profile?: SearchProfileDto): RuleBuckets {
+  const byType = {
+    positive: [] as string[],
+    negative: [] as string[],
+    hardExclude: [] as string[],
+    instruction: [] as string[],
+  };
+
+  profile?.rules.forEach((rule) => {
+    if (rule.type === "hard_exclude") {
+      byType.hardExclude.push(rule.value);
+      return;
+    }
+
+    byType[rule.type].push(rule.value);
+  });
+
+  return {
+    positive: byType.positive.join("\n"),
+    negative: byType.negative.join("\n"),
+    hardExclude: byType.hardExclude.join("\n"),
+    instruction: byType.instruction.join("\n"),
+  };
+}
+
+function splitLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export function SearchProfileEditor({
+  profile,
+  availableRequestNames,
+}: SearchProfileEditorProps) {
+  const router = useRouter();
+  const [name, setName] = useState(profile?.name ?? "");
+  const [description, setDescription] = useState(profile?.description ?? "");
+  const [scoringPrompt, setScoringPrompt] = useState(profile?.scoringPrompt ?? "");
+  const [selectedRequestNames, setSelectedRequestNames] = useState<string[]>(
+    profile?.requestNames ?? [],
+  );
+  const [ruleBuckets, setRuleBuckets] = useState<RuleBuckets>(() =>
+    toRuleBuckets(profile),
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setName(profile?.name ?? "");
+    setDescription(profile?.description ?? "");
+    setScoringPrompt(profile?.scoringPrompt ?? "");
+    setSelectedRequestNames(profile?.requestNames ?? []);
+    setRuleBuckets(toRuleBuckets(profile));
+    setMessage(null);
+    setErrorMessage(null);
+  }, [profile]);
+
+  const hasProfile = Boolean(profile);
+  const requestNameSet = useMemo(
+    () => new Set(selectedRequestNames),
+    [selectedRequestNames],
+  );
+
+  function toggleRequestName(requestName: string) {
+    setSelectedRequestNames((current) =>
+      current.includes(requestName)
+        ? current.filter((value) => value !== requestName)
+        : [...current, requestName],
+    );
+  }
+
+  async function handleSave() {
+    if (!profile) {
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/search-profiles/${profile.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          description,
+          scoringPrompt,
+          requestNames: selectedRequestNames,
+          rules: {
+            positive: splitLines(ruleBuckets.positive),
+            negative: splitLines(ruleBuckets.negative),
+            hardExclude: splitLines(ruleBuckets.hardExclude),
+            instruction: splitLines(ruleBuckets.instruction),
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await getErrorMessageFromResponse(
+            response,
+            "Не удалось сохранить профиль поиска.",
+          ),
+        );
+      }
+
+      setMessage("Профиль поиска сохранён.");
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Не удалось сохранить профиль.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {!hasProfile ? (
+        <p className="text-xs text-muted-foreground">
+          Активный профиль поиска не выбран.
+        </p>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Название профиля
+          </label>
+          <input
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+            disabled={!hasProfile || isSaving}
+            onChange={(event) => setName(event.target.value)}
+            value={name}
+          />
+        </div>
+
+        <div className="space-y-1.5 md:col-span-1">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Привязанные RequestName
+          </label>
+          <div className="flex flex-wrap gap-2 rounded-md border bg-background p-3">
+            {availableRequestNames.map((requestName) => {
+              const isActive = requestNameSet.has(requestName);
+
+              return (
+                <button
+                  className={[
+                    "rounded-md border px-2.5 py-1 text-xs transition-colors",
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  ].join(" ")}
+                  disabled={!hasProfile || isSaving}
+                  key={requestName}
+                  onClick={() => toggleRequestName(requestName)}
+                  type="button"
+                >
+                  {requestName}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-medium text-muted-foreground">
+          Описание профиля
+        </label>
+        <textarea
+          className="min-h-[96px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+          disabled={!hasProfile || isSaving}
+          onChange={(event) => setDescription(event.target.value)}
+          value={description}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-medium text-muted-foreground">
+          Scoring prompt
+        </label>
+        <textarea
+          className="min-h-[140px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+          disabled={!hasProfile || isSaving}
+          onChange={(event) => setScoringPrompt(event.target.value)}
+          value={scoringPrompt}
+        />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Положительные сигналы
+          </label>
+          <textarea
+            className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+            disabled={!hasProfile || isSaving}
+            onChange={(event) =>
+              setRuleBuckets((current) => ({
+                ...current,
+                positive: event.target.value,
+              }))
+            }
+            placeholder="Одна фраза на строку"
+            value={ruleBuckets.positive}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Отрицательные сигналы
+          </label>
+          <textarea
+            className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+            disabled={!hasProfile || isSaving}
+            onChange={(event) =>
+              setRuleBuckets((current) => ({
+                ...current,
+                negative: event.target.value,
+              }))
+            }
+            placeholder="Одна фраза на строку"
+            value={ruleBuckets.negative}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Жёсткие исключения
+          </label>
+          <textarea
+            className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+            disabled={!hasProfile || isSaving}
+            onChange={(event) =>
+              setRuleBuckets((current) => ({
+                ...current,
+                hardExclude: event.target.value,
+              }))
+            }
+            placeholder="Одна фраза на строку"
+            value={ruleBuckets.hardExclude}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Дополнительные инструкции
+          </label>
+          <textarea
+            className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+            disabled={!hasProfile || isSaving}
+            onChange={(event) =>
+              setRuleBuckets((current) => ({
+                ...current,
+                instruction: event.target.value,
+              }))
+            }
+            placeholder="Одна фраза на строку"
+            value={ruleBuckets.instruction}
+          />
+        </div>
+      </div>
+
+      {errorMessage ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      {message ? (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          {message}
+        </div>
+      ) : null}
+
+      <button
+        className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+        disabled={!hasProfile || isSaving}
+        onClick={handleSave}
+        type="button"
+      >
+        {isSaving ? "Сохраняю..." : "Сохранить профиль"}
+      </button>
+    </div>
+  );
+}

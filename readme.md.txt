@@ -1,0 +1,5 @@
+DEEP-SEEK-API-KEY sk-45610e3d88ca4d938d907a268cd3ebf8
+GPT-5.5-API-KEY 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
+
+Parser login : caprizzze
+Parser password : Pizdec256!
