@@ -2,6 +2,7 @@ import { ChatPanel } from "@/components/chat/chat-panel";
 import { Sidebar } from "@/components/layout/sidebar";
 import type { KeywordDto } from "@/types/keyword.dto";
 import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
+import type { SabySourceDto } from "@/types/saby-source.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type {
   SabyDailyLimitStatistics,
@@ -13,7 +14,7 @@ interface AppShellProps {
   tenders: Tender[];
   activeTender?: Tender;
   requestNames: string[];
-  availableRequestNames: string[];
+  availableSources: SabySourceDto[];
   activeRequestName: string;
   searchProfiles: SearchProfileDto[];
   activeSearchProfile?: SearchProfileDto;
@@ -28,7 +29,7 @@ export function AppShell({
   tenders,
   activeTender,
   requestNames,
-  availableRequestNames,
+  availableSources,
   activeRequestName,
   searchProfiles,
   activeSearchProfile,
@@ -47,7 +48,7 @@ export function AppShell({
         activeTenderId={resolvedActiveTender?.id}
         activeRequestName={activeRequestName}
         activeSearchProfile={activeSearchProfile}
-        availableRequestNames={availableRequestNames}
+        availableSources={availableSources}
         initialKeywords={initialKeywords}
         recentSabyApiCalls={recentSabyApiCalls}
         requestNames={requestNames}

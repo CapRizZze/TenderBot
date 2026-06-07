@@ -9,17 +9,20 @@ import {
 } from "@/lib/repositories/tenderRepository";
 import { findRecentSabyApiCallLogs } from "@/lib/services/sabyApiCallLogService";
 import {
+  findActiveSabySources,
+  getConfiguredSabyRequestNames,
+  syncConfiguredSabySources,
+} from "@/lib/services/sabySourceService";
+import {
   findActiveSearchProfile,
   getOrCreateSearchProfiles,
   mapSearchProfileToDto,
 } from "@/lib/services/searchProfileService";
-import {
-  getConfiguredSabyRequestNames,
-  userKeywordService,
-} from "@/lib/services/userKeywordService";
+import { userKeywordService } from "@/lib/services/userKeywordService";
 import { fetchTenderParserDailyLimitStatistics } from "@/lib/tender-parser/tenderParserService";
 import type { KeywordDto } from "@/types/keyword.dto";
 import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
+import type { SabySourceDto } from "@/types/saby-source.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type { SabyDailyLimitStatistics, Tender } from "@/types/tender-parser.dto";
 
@@ -46,11 +49,19 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const envRequestNames = getConfiguredSabyRequestNames();
   let initialKeywords: KeywordDto[] = [];
   let searchProfiles: SearchProfileDto[] = [];
+  let availableSources: SabySourceDto[] = [];
 
   try {
     initialKeywords = await userKeywordService.getOrCreateUserKeywords(session.user.id);
   } catch (error) {
     console.error("Failed to load user keywords", error);
+  }
+
+  try {
+    await syncConfiguredSabySources(envRequestNames);
+    availableSources = await findActiveSabySources();
+  } catch (error) {
+    console.error("Failed to load Saby sources", error);
   }
 
   try {
@@ -149,7 +160,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       activeTenderId={searchParams?.tenderId}
       activeRequestName={activeRequestName}
       activeSearchProfile={activeSearchProfile}
-      availableRequestNames={envRequestNames}
+      availableSources={availableSources}
       initialKeywords={initialKeywords}
       recentSabyApiCalls={recentSabyApiCalls}
       requestNames={requestNames}

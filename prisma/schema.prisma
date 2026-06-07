@@ -43,6 +43,12 @@ enum TenderScoreVerdict {
   irrelevant
 }
 
+enum SabySourceRefreshPriority {
+  high
+  medium
+  low
+}
+
 model User {
   id            String         @id @default(cuid())
   name          String?
@@ -142,12 +148,46 @@ model SearchProfile {
   updatedAt    DateTime                   @updatedAt
   user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   requestNames SearchProfileRequestName[]
+  sources      SearchProfileSabySource[]
   rules        SearchProfileRule[]
   scores       TenderProfileScore[]
 
   @@unique([userId, name])
   @@index([userId])
   @@map("search_profiles")
+}
+
+model SabySource {
+  id                 String                    @id @default(cuid())
+  name               String
+  requestName        String                    @unique
+  description        String                    @default("")
+  includeKeywordsText String                   @default("")
+  excludeKeywordsText String                   @default("")
+  refreshPriority    SabySourceRefreshPriority @default(medium)
+  refreshIntervalMin Int                       @default(1440)
+  isActive           Boolean                   @default(true)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  profiles           SearchProfileSabySource[]
+
+  @@index([isActive, refreshPriority])
+  @@map("saby_sources")
+}
+
+model SearchProfileSabySource {
+  id              String        @id @default(cuid())
+  searchProfileId String
+  sabySourceId    String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  searchProfile   SearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+  sabySource      SabySource    @relation(fields: [sabySourceId], references: [id], onDelete: Cascade)
+
+  @@unique([searchProfileId, sabySourceId])
+  @@index([sabySourceId])
+  @@index([searchProfileId])
+  @@map("search_profile_saby_sources")
 }
 
 model SearchProfileRequestName {

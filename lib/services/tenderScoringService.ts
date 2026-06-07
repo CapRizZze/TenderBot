@@ -1,9 +1,10 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import type {
+  SabySource,
   SearchProfile,
-  SearchProfileRequestName,
   SearchProfileRule,
+  SearchProfileSabySource,
   Tender as PrismaTender,
 } from "@prisma/client";
 
@@ -12,7 +13,11 @@ import { prisma } from "@/lib/prisma";
 import type { Tender } from "@/types/tender-parser.dto";
 
 type SearchProfileWithRelations = SearchProfile & {
-  requestNames: SearchProfileRequestName[];
+  sources: Array<
+    SearchProfileSabySource & {
+      sabySource: SabySource;
+    }
+  >;
   rules: SearchProfileRule[];
 };
 
@@ -47,17 +52,23 @@ export async function scoreTendersForRequestName(input: {
   const profiles = await prisma.searchProfile.findMany({
     where: {
       userId: input.userId,
-      requestNames: {
+      sources: {
         some: {
-          requestName: {
-            equals: input.requestName,
-            mode: "insensitive",
+          sabySource: {
+            requestName: {
+              equals: input.requestName,
+              mode: "insensitive",
+            },
           },
         },
       },
     },
     include: {
-      requestNames: true,
+      sources: {
+        include: {
+          sabySource: true,
+        },
+      },
       rules: {
         orderBy: { createdAt: "asc" },
       },
@@ -102,7 +113,11 @@ export async function saveTenderScoreFeedback(input: {
       tender: true,
       searchProfile: {
         include: {
-          requestNames: true,
+          sources: {
+            include: {
+              sabySource: true,
+            },
+          },
           rules: {
             orderBy: { createdAt: "asc" },
           },
@@ -206,7 +221,14 @@ async function requestDeepSeekScore(
               value: rule.value,
               weight: rule.weight,
             })),
-            requestNames: profile.requestNames.map((link) => link.requestName),
+            sabySources: profile.sources.map((link) => ({
+              id: link.sabySource.id,
+              name: link.sabySource.name,
+              requestName: link.sabySource.requestName,
+              description: link.sabySource.description,
+              includeKeywordsText: link.sabySource.includeKeywordsText,
+              excludeKeywordsText: link.sabySource.excludeKeywordsText,
+            })),
           },
           tender: {
             title: tender.title,
@@ -305,6 +327,14 @@ async function requestDeepSeekProfileRules(input: {
             name: input.profile.name,
             description: input.profile.description,
             scoringPrompt: input.profile.scoringPrompt,
+            sabySources: input.profile.sources.map((link) => ({
+              id: link.sabySource.id,
+              name: link.sabySource.name,
+              requestName: link.sabySource.requestName,
+              description: link.sabySource.description,
+              includeKeywordsText: link.sabySource.includeKeywordsText,
+              excludeKeywordsText: link.sabySource.excludeKeywordsText,
+            })),
             existingRules: input.profile.rules.map((rule) => ({
               type: rule.type,
               value: rule.value,

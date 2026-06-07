@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import type { SabySourceDto } from "@/types/saby-source.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import { getErrorMessageFromResponse } from "@/utils/api-client";
 
 interface SearchProfileEditorProps {
   profile?: SearchProfileDto;
-  availableRequestNames: string[];
+  availableSources: SabySourceDto[];
 }
 
 type RuleBuckets = {
@@ -52,14 +53,14 @@ function splitLines(value: string) {
 
 export function SearchProfileEditor({
   profile,
-  availableRequestNames,
+  availableSources,
 }: SearchProfileEditorProps) {
   const router = useRouter();
   const [name, setName] = useState(profile?.name ?? "");
   const [description, setDescription] = useState(profile?.description ?? "");
   const [scoringPrompt, setScoringPrompt] = useState(profile?.scoringPrompt ?? "");
-  const [selectedRequestNames, setSelectedRequestNames] = useState<string[]>(
-    profile?.requestNames ?? [],
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>(
+    profile?.sources.map((source) => source.id) ?? [],
   );
   const [ruleBuckets, setRuleBuckets] = useState<RuleBuckets>(() =>
     toRuleBuckets(profile),
@@ -72,23 +73,20 @@ export function SearchProfileEditor({
     setName(profile?.name ?? "");
     setDescription(profile?.description ?? "");
     setScoringPrompt(profile?.scoringPrompt ?? "");
-    setSelectedRequestNames(profile?.requestNames ?? []);
+    setSelectedSourceIds(profile?.sources.map((source) => source.id) ?? []);
     setRuleBuckets(toRuleBuckets(profile));
     setMessage(null);
     setErrorMessage(null);
   }, [profile]);
 
   const hasProfile = Boolean(profile);
-  const requestNameSet = useMemo(
-    () => new Set(selectedRequestNames),
-    [selectedRequestNames],
-  );
+  const sourceIdSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
 
-  function toggleRequestName(requestName: string) {
-    setSelectedRequestNames((current) =>
-      current.includes(requestName)
-        ? current.filter((value) => value !== requestName)
-        : [...current, requestName],
+  function toggleSource(sourceId: string) {
+    setSelectedSourceIds((current) =>
+      current.includes(sourceId)
+        ? current.filter((value) => value !== sourceId)
+        : [...current, sourceId],
     );
   }
 
@@ -111,7 +109,7 @@ export function SearchProfileEditor({
           name,
           description,
           scoringPrompt,
-          requestNames: selectedRequestNames,
+          sourceIds: selectedSourceIds,
           rules: {
             positive: splitLines(ruleBuckets.positive),
             negative: splitLines(ruleBuckets.negative),
@@ -162,13 +160,13 @@ export function SearchProfileEditor({
           />
         </div>
 
-        <div className="space-y-1.5 md:col-span-1">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-medium text-muted-foreground">
-            Привязанные RequestName
+            Привязанные источники Saby
           </label>
           <div className="flex flex-wrap gap-2 rounded-md border bg-background p-3">
-            {availableRequestNames.map((requestName) => {
-              const isActive = requestNameSet.has(requestName);
+            {availableSources.map((source) => {
+              const isActive = sourceIdSet.has(source.id);
 
               return (
                 <button
@@ -179,11 +177,11 @@ export function SearchProfileEditor({
                       : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   ].join(" ")}
                   disabled={!hasProfile || isSaving}
-                  key={requestName}
-                  onClick={() => toggleRequestName(requestName)}
+                  key={source.id}
+                  onClick={() => toggleSource(source.id)}
                   type="button"
                 >
-                  {requestName}
+                  {source.name}
                 </button>
               );
             })}

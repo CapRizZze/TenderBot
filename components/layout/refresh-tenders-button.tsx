@@ -28,6 +28,7 @@ interface RefreshTendersResponse {
 }
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+const MESSAGE_AUTOHIDE_MS = 6000;
 
 export function RefreshTendersButton({
   requestName,
@@ -72,6 +73,19 @@ export function RefreshTendersButton({
 
     return () => window.clearInterval(timer);
   }, [cooldownUntil, storageKey]);
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMessage(null);
+      setIsError(false);
+    }, MESSAGE_AUTOHIDE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
   const cooldownRemainingMs =
     cooldownUntil && cooldownUntil > cooldownNow ? cooldownUntil - cooldownNow : 0;

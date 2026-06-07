@@ -17,6 +17,7 @@ import { SearchProfileEditor } from "@/components/layout/search-profile-editor";
 import { SignOutButton } from "@/components/layout/sign-out-button";
 import type { KeywordDto } from "@/types/keyword.dto";
 import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
+import type { SabySourceDto } from "@/types/saby-source.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type {
   SabyDailyLimitStatistics,
@@ -28,7 +29,7 @@ interface SidebarProps {
   activeRequestName: string;
   activeSearchProfile?: SearchProfileDto;
   requestNames: string[];
-  availableRequestNames: string[];
+  availableSources: SabySourceDto[];
   searchProfiles: SearchProfileDto[];
   initialKeywords: KeywordDto[];
   recentSabyApiCalls: SabyApiCallLogEntry[];
@@ -164,7 +165,7 @@ export function Sidebar({
   activeRequestName,
   activeSearchProfile,
   requestNames,
-  availableRequestNames,
+  availableSources,
   searchProfiles,
   initialKeywords,
   recentSabyApiCalls,
@@ -479,7 +480,7 @@ export function Sidebar({
                       </summary>
                       <div className="mt-2 rounded-lg border bg-card p-3">
                         <KeywordEditor
-                          availableRequestNames={availableRequestNames}
+                          availableRequestNames={availableSources.map((source) => source.requestName)}
                           initialKeywords={initialKeywords}
                         />
                       </div>
@@ -491,7 +492,7 @@ export function Sidebar({
                       </summary>
                       <div className="mt-2 rounded-lg border bg-card p-3">
                         <SearchProfileEditor
-                          availableRequestNames={availableRequestNames}
+                          availableSources={availableSources}
                           profile={activeSearchProfile}
                         />
                       </div>
@@ -585,7 +586,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 [scrollbar-gutter:stable]">
         <details className="group w-full shrink-0" open>
           <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2">
             <span className="text-sm font-medium">Чаты по тендерам</span>

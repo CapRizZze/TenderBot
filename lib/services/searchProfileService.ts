@@ -1,15 +1,24 @@
 import type {
+  SabySource,
   SearchProfile,
-  SearchProfileRequestName,
   SearchProfileRule,
+  SearchProfileSabySource,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import {
+  findActiveSabySources,
+  syncConfiguredSabySources,
+} from "@/lib/services/sabySourceService";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type { SearchProfileUpdateDto } from "@/types/search-profile-update.dto";
 
 type SearchProfileWithRelations = SearchProfile & {
-  requestNames: SearchProfileRequestName[];
+  sources: Array<
+    SearchProfileSabySource & {
+      sabySource: SabySource;
+    }
+  >;
   rules: SearchProfileRule[];
 };
 
@@ -20,13 +29,37 @@ const MAIN_PROFILE_DESCRIPTION =
   "Компания занимается разработкой, внедрением и сопровождением программного обеспечения. Релевантны тендеры на ПО, информационные системы, интеграции, поддержку, аналитику и автоматизацию.";
 
 const TEST_PROFILE_DESCRIPTION =
-  "Тестовый профиль для сравнения выдачи. Считать релевантными только тендеры с явной IT-составляющей, разработкой ПО, цифровыми сервисами, интеграциями или сопровождением программных продуктов.";
+  "Тестовый профиль для сравнения выдачи. Считать релевантными только тендеры с явной IT-составляющей: разработкой ПО, цифровыми сервисами, интеграциями или сопровождением программных продуктов.";
 
 const MAIN_PROFILE_PROMPT =
   "Оцени релевантность тендера для компании-разработчика программного обеспечения. Высокая релевантность: разработка ПО, внедрение информационных систем, интеграции, аналитика, сопровождение ПО, техническая поддержка цифровых сервисов. Низкая релевантность: строительство, ремонт, поставка физического оборудования без IT-составляющей.";
 
 const TEST_PROFILE_PROMPT =
   "Оцени релевантность строго. Профиль ищет только разработку, внедрение или сопровождение программного обеспечения. Не считать релевантными строительные, монтажные, ремонтные работы, поставку пандусов, поручней, тактильной плитки, указателей и других физических конструкций, если нет явной разработки ПО.";
+
+function defaultRulesForMainProfile() {
+  return [
+    { type: "positive" as const, value: "разработка ПО", weight: 5 },
+    { type: "positive" as const, value: "информационная система", weight: 4 },
+    { type: "positive" as const, value: "сопровождение ПО", weight: 4 },
+    { type: "negative" as const, value: "ремонт", weight: 3 },
+    { type: "negative" as const, value: "строительство", weight: 4 },
+  ];
+}
+
+function defaultRulesForTestProfile() {
+  return [
+    { type: "positive" as const, value: "программное обеспечение", weight: 6 },
+    { type: "positive" as const, value: "разработка", weight: 4 },
+    { type: "hard_exclude" as const, value: "пандус", weight: 10 },
+    { type: "hard_exclude" as const, value: "поручни", weight: 10 },
+    { type: "hard_exclude" as const, value: "строительные работы", weight: 10 },
+  ];
+}
+
+function createSourceLinkData(sourceIds: string[]) {
+  return sourceIds.map((sabySourceId) => ({ sabySourceId }));
+}
 
 export async function getOrCreateSearchProfiles(
   userId: string,
@@ -38,6 +71,13 @@ export async function getOrCreateSearchProfiles(
     return existingProfiles.map(mapSearchProfileToDto);
   }
 
+  const sources = await syncConfiguredSabySources(availableRequestNames);
+  const sourceIds = sources.map((source) => source.id);
+
+  if (sourceIds.length === 0) {
+    return [];
+  }
+
   await prisma.$transaction(async (transaction) => {
     const mainProfile = await transaction.searchProfile.create({
       data: {
@@ -46,17 +86,11 @@ export async function getOrCreateSearchProfiles(
         description: MAIN_PROFILE_DESCRIPTION,
         scoringPrompt: MAIN_PROFILE_PROMPT,
         isDefault: true,
-        requestNames: {
-          create: availableRequestNames.map((requestName) => ({ requestName })),
+        sources: {
+          create: createSourceLinkData(sourceIds),
         },
         rules: {
-          create: [
-            { type: "positive", value: "разработка ПО", weight: 5 },
-            { type: "positive", value: "информационная система", weight: 4 },
-            { type: "positive", value: "сопровождение ПО", weight: 4 },
-            { type: "negative", value: "ремонт", weight: 3 },
-            { type: "negative", value: "строительство", weight: 4 },
-          ],
+          create: defaultRulesForMainProfile(),
         },
       },
     });
@@ -68,17 +102,11 @@ export async function getOrCreateSearchProfiles(
         description: TEST_PROFILE_DESCRIPTION,
         scoringPrompt: TEST_PROFILE_PROMPT,
         isDefault: false,
-        requestNames: {
-          create: availableRequestNames.map((requestName) => ({ requestName })),
+        sources: {
+          create: createSourceLinkData(sourceIds),
         },
         rules: {
-          create: [
-            { type: "positive", value: "программное обеспечение", weight: 6 },
-            { type: "positive", value: "разработка", weight: 4 },
-            { type: "hard_exclude", value: "пандус", weight: 10 },
-            { type: "hard_exclude", value: "поручни", weight: 10 },
-            { type: "hard_exclude", value: "строительные работы", weight: 10 },
-          ],
+          create: defaultRulesForTestProfile(),
         },
       },
     });
@@ -96,8 +124,13 @@ export async function findSearchProfiles(userId: string) {
   return prisma.searchProfile.findMany({
     where: { userId },
     include: {
-      requestNames: {
-        orderBy: { createdAt: "asc" },
+      sources: {
+        include: {
+          sabySource: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
       },
       rules: {
         orderBy: { createdAt: "asc" },
@@ -124,13 +157,26 @@ export async function findActiveSearchProfile(
 export function mapSearchProfileToDto(
   profile: SearchProfileWithRelations,
 ): SearchProfileDto {
+  const sources = profile.sources.map((link) => ({
+    id: link.sabySource.id,
+    name: link.sabySource.name,
+    requestName: link.sabySource.requestName,
+    description: link.sabySource.description,
+    includeKeywordsText: link.sabySource.includeKeywordsText,
+    excludeKeywordsText: link.sabySource.excludeKeywordsText,
+    refreshPriority: link.sabySource.refreshPriority,
+    refreshIntervalMin: link.sabySource.refreshIntervalMin,
+    isActive: link.sabySource.isActive,
+  }));
+
   return {
     id: profile.id,
     name: profile.name,
     description: profile.description,
     scoringPrompt: profile.scoringPrompt,
     isDefault: profile.isDefault,
-    requestNames: profile.requestNames.map((link) => link.requestName),
+    sources,
+    requestNames: sources.map((source) => source.requestName),
     rules: profile.rules.map((rule) => ({
       id: rule.id,
       type: rule.type,
@@ -156,6 +202,14 @@ export async function updateSearchProfile(
     throw new Error("Профиль поиска не найден.");
   }
 
+  const activeSources = await findActiveSabySources();
+  const allowedSourceIds = new Set(activeSources.map((source) => source.id));
+  const invalidSourceIds = input.sourceIds.filter((sourceId) => !allowedSourceIds.has(sourceId));
+
+  if (invalidSourceIds.length > 0) {
+    throw new Error("Выбраны недоступные источники Saby.");
+  }
+
   await prisma.$transaction(async (transaction) => {
     await transaction.searchProfile.update({
       where: { id: searchProfileId },
@@ -166,14 +220,14 @@ export async function updateSearchProfile(
       },
     });
 
-    await transaction.searchProfileRequestName.deleteMany({
+    await transaction.searchProfileSabySource.deleteMany({
       where: { searchProfileId },
     });
 
-    await transaction.searchProfileRequestName.createMany({
-      data: input.requestNames.map((requestName) => ({
+    await transaction.searchProfileSabySource.createMany({
+      data: input.sourceIds.map((sabySourceId) => ({
         searchProfileId,
-        requestName,
+        sabySourceId,
       })),
     });
 
@@ -218,8 +272,13 @@ export async function updateSearchProfile(
   const updatedProfile = await prisma.searchProfile.findUniqueOrThrow({
     where: { id: searchProfileId },
     include: {
-      requestNames: {
-        orderBy: { createdAt: "asc" },
+      sources: {
+        include: {
+          sabySource: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
       },
       rules: {
         orderBy: { createdAt: "asc" },

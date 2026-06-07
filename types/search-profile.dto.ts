@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sabySourceDtoSchema } from "@/types/saby-source.dto";
 
 export const searchProfileRuleDtoSchema = z.object({
   id: z.string().min(1),
@@ -13,6 +14,7 @@ export const searchProfileDtoSchema = z.object({
   description: z.string().min(1),
   scoringPrompt: z.string().min(1),
   isDefault: z.boolean(),
+  sources: z.array(sabySourceDtoSchema),
   requestNames: z.array(z.string().min(1)),
   rules: z.array(searchProfileRuleDtoSchema),
 });

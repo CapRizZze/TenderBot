@@ -4,9 +4,9 @@ export const searchProfileUpdateDtoSchema = z.object({
   name: z.string().trim().min(1, "Укажите название профиля."),
   description: z.string().trim().min(1, "Укажите описание профиля."),
   scoringPrompt: z.string().trim().min(1, "Укажите scoring prompt."),
-  requestNames: z
+  sourceIds: z
     .array(z.string().trim().min(1))
-    .min(1, "Выберите хотя бы один RequestName."),
+    .min(1, "Выберите хотя бы один источник Saby."),
   rules: z.object({
     positive: z.array(z.string().trim().min(1)).default([]),
     negative: z.array(z.string().trim().min(1)).default([]),
