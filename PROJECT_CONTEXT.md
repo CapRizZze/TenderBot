@@ -1,82 +1,95 @@
-# AI Tender Bot: Full Project Context
+# AI Tender Bot: Полный контекст проекта
 
-## Purpose
+## Назначение проекта
 
-`AI Tender Bot` is a Next.js application for collecting tenders from Saby Trade, caching them locally, scoring their relevance for a specific business profile, and then letting the user analyze a chosen tender through LLM-assisted chat.
+`AI Tender Bot` — это приложение на `Next.js` для:
 
-The product goal is:
+- получения тендеров из `Saby Trade`;
+- локального кэширования тендеров в `PostgreSQL`;
+- оценки релевантности тендеров под конкретный бизнес-профиль;
+- анализа выбранного тендера и его документов через LLM-чат.
 
-- reduce time spent reading irrelevant tenders;
-- surface only relevant or potentially relevant tenders;
-- analyze tender content and attached documents faster;
-- support quick decision-making for managers and technical specialists.
+Основная бизнес-цель продукта:
 
-This file is intended to be fed into any LLM or coding agent as project context.
+- не читать вручную большой объём нерелевантных тендеров;
+- быстро выделять подходящие и спорные тендеры;
+- ускорять технический и управленческий анализ закупки;
+- помогать принимать решение по участию в тендере.
 
-## Mandatory Maintenance Rule
+Этот файл предназначен для передачи любой нейросети, LLM или агенту разработки как стартовый контекст проекта.
 
-This file must be updated whenever any of the following changes:
+## Обязательное правило сопровождения
 
-- project architecture;
-- data model;
-- Saby integration flow;
+Этот файл нужно **обязательно обновлять**, если меняется:
+
+- архитектура проекта;
+- структура БД;
+- логика интеграции с `Saby`;
 - auth flow;
-- scoring logic;
-- first-login/onboarding logic;
+- логика `SearchProfile`;
+- scoring;
+- onboarding первого входа;
 - API routes;
-- database schema;
-- important UI flows.
+- ключевые UI-сценарии;
+- способ работы приложения в целом.
 
-If this file becomes stale, any LLM working from it may make incorrect assumptions and damage development velocity.
+Если файл устареет, любая следующая нейросеть начнёт делать неверные выводы о проекте.
 
-## Current State Summary
+## Краткое текущее состояние
 
-As of `2026-06-09`, the project already contains:
+На `2026-06-09` в проекте уже есть:
 
-- authentication via NextAuth;
-- tender caching in PostgreSQL;
-- per-user tender visibility scoping;
-- `SearchProfile` support;
-- DeepSeek-based tender card scoring;
-- manual score feedback (`relevant / maybe / irrelevant`);
-- `SabySource` records in the database;
-- manual refresh from Saby via the app;
-- Saby statistics display in the UI.
+- авторизация через `NextAuth`;
+- локальный кэш тендеров в `PostgreSQL`;
+- пользовательская привязка тендеров через `requestName`;
+- `SearchProfile`;
+- DeepSeek-scoring карточек тендеров;
+- ручной feedback по скорингу;
+- таблица `SabySource`;
+- ручное обновление тендеров из интерфейса;
+- отображение статистики Saby по лимитам.
 
-Important: some planned product ideas discussed in chat are **not implemented yet**. This document distinguishes current implementation from future direction.
+Важно:
 
-## Tech Stack
+- часть обсуждавшихся продуктовых идей **ещё не реализована**;
+- в этом документе разделяются:
+  - текущее рабочее состояние;
+  - найденные runtime-факты;
+  - будущие планы.
 
-- Framework: `Next.js 14`
-- Language: `TypeScript`
-- UI: `React`, `Tailwind CSS`
-- Auth: `NextAuth`
-- Database: `PostgreSQL`
-- ORM: `Prisma`
-- Validation: `zod`
-- LLM scoring / analysis: `DeepSeek`
-- Email login: `Nodemailer` provider through NextAuth
+## Технологический стек
 
-## Repository Layout
+- `Next.js 14`
+- `TypeScript`
+- `React`
+- `Tailwind CSS`
+- `NextAuth`
+- `PostgreSQL`
+- `Prisma`
+- `zod`
+- `DeepSeek`
+- `Nodemailer`
 
-Key directories and files:
+## Структура репозитория
+
+Основные каталоги:
 
 - `app/`
-  - App Router pages and API routes
+  - App Router страницы и API routes
 - `components/`
-  - UI shell, sidebar, chat panel, editors
+  - UI shell, sidebar, chat, editors
 - `lib/`
-  - services, repositories, parser, env, Prisma client
+  - сервисы, репозитории, parser, env, Prisma client
 - `prisma/`
-  - schema and migrations
+  - схема и миграции
 - `types/`
-  - DTOs and zod-backed schemas
+  - DTO и zod-схемы
 - `tests/`
-  - parser, DTO, policy, presentation tests
+  - тесты parser, policy, DTO, presentation
 - `scripts/`
-  - utility and validation scripts
+  - утилиты и проверочные скрипты
 
-Important root files:
+Ключевые файлы:
 
 - [auth.ts](G:\Myprojects\TenderBot\auth.ts)
 - [app/page.tsx](G:\Myprojects\TenderBot\app\page.tsx)
@@ -86,85 +99,88 @@ Important root files:
 - [lib/services/sabySourceService.ts](G:\Myprojects\TenderBot\lib\services\sabySourceService.ts)
 - [app/api/tenders/route.ts](G:\Myprojects\TenderBot\app\api\tenders\route.ts)
 
-## Auth Flow
+## Авторизация
 
-### Current Implementation
+### Что реализовано сейчас
 
-Auth is implemented in [auth.ts](G:\Myprojects\TenderBot\auth.ts).
+Авторизация описана в [auth.ts](G:\Myprojects\TenderBot\auth.ts).
 
-Current modes:
+Текущие способы входа:
 
-- email magic link through `Nodemailer`;
-- local dev fallback:
-  - saved magic link in dev;
-  - optional dev credentials login in development.
+- magic link по email через `Nodemailer`;
+- dev fallback в локальной разработке:
+  - сохранение magic link локально;
+  - optional dev credentials login.
 
-Important current behavior:
+Текущее поведение:
 
-- if user is not authenticated, [app/page.tsx](G:\Myprojects\TenderBot\app\page.tsx) redirects to `/sign-in`;
-- session strategy is JWT;
-- authenticated session stores `session.user.id`.
+- если пользователь не авторизован, [app/page.tsx](G:\Myprojects\TenderBot\app\page.tsx) делает redirect на `/sign-in`;
+- сессия хранится как JWT;
+- `session.user.id` пробрасывается в приложение.
 
-### Product Requirement Discussed
+### Желаемый продуктовый сценарий
 
-The desired business flow is:
+Обсуждённая целевая логика:
 
-1. user registers;
-2. user receives link by email;
-3. user verifies and signs in;
-4. only after auth can user access the main application.
+1. пользователь регистрируется;
+2. получает ссылку на почту;
+3. подтверждает вход;
+4. только после этого попадает в основное меню.
 
-Current implementation already supports magic-link sign-in, but first-login onboarding for search profile generation is **not yet implemented**.
+Magic-link логика уже есть, но onboarding первого входа для создания профиля пока **не реализован**.
 
-## Main User Flow
+## Основной пользовательский сценарий
 
-### Current Flow
+### Как работает сейчас
 
-1. user signs in;
-2. main page loads;
-3. current request source list is loaded;
-4. search profiles are loaded or auto-created;
-5. cached tenders are shown for the active request name;
-6. manual refresh can fetch fresh tenders from Saby;
-7. fetched tenders are stored in DB;
-8. DeepSeek scores tender cards in the background;
-9. user opens a tender;
-10. user chats with LLM and can analyze documents.
+1. пользователь входит в систему;
+2. загружается главная страница;
+3. подгружается список источников;
+4. подгружаются или автосоздаются `SearchProfile`;
+5. показываются закэшированные тендеры по активному `requestName`;
+6. ручной refresh может получить свежие тендеры из Saby;
+7. тендеры сохраняются в БД;
+8. DeepSeek считает scoring карточек в фоне;
+9. пользователь открывает тендер;
+10. работает с чатом и анализом документов.
 
-### Planned But Not Yet Implemented
+### Что запланировано, но ещё не сделано
 
-At first login:
+При первом входе:
 
-1. if user has no profile, show SearchProfile onboarding wizard;
-2. ask fixed business questions;
-3. send answers to DeepSeek;
-4. generate draft `SearchProfile`;
-5. let user approve or edit;
-6. then enter main UI.
+1. если у пользователя нет `SearchProfile`, показывается onboarding;
+2. пользователь отвечает на фиксированные бизнес-вопросы;
+3. ответы отправляются в DeepSeek;
+4. создаётся draft-профиль;
+5. пользователь подтверждает или редактирует его;
+6. только после этого попадает в основной интерфейс.
 
-This onboarding flow is still a plan, not current code.
+Этого сценария в коде ещё нет.
 
-## Current Data Model
+## Текущая модель данных
 
-Defined in [prisma/schema.prisma](G:\Myprojects\TenderBot\prisma\schema.prisma).
+Схема описана в [prisma/schema.prisma](G:\Myprojects\TenderBot\prisma\schema.prisma).
 
-### Core Models
+## Основные модели
 
-#### `User`
+### `User`
 
-- standard NextAuth user
-- owns:
-  - conversations
-  - keywords
-  - Saby logs
-  - search profiles
-  - scoped tender links
+Пользователь NextAuth.
 
-#### `Tender`
+Связанные сущности:
 
-Cached tender card.
+- conversations
+- keywords
+- sabyRequests
+- sabyApiCalls
+- searchProfiles
+- tenderRequestNames
 
-Key fields:
+### `Tender`
+
+Закэшированная карточка тендера.
+
+Ключевые поля:
 
 - `externalId`
 - `number`
@@ -178,11 +194,11 @@ Key fields:
 - `sourceUrl`
 - `sabyUrl`
 
-#### `TenderAttachment`
+### `TenderAttachment`
 
-Tender file metadata and extracted text cache.
+Файлы тендера и кэш извлечённого текста.
 
-Key fields:
+Ключевые поля:
 
 - `name`
 - `url`
@@ -192,56 +208,60 @@ Key fields:
 - `extractedTextAt`
 - `extractedTextError`
 
-#### `TenderRequestName`
+### `TenderRequestName`
 
-Per-user visibility binding between tender and request name.
+Пользовательская видимость тендера через `requestName`.
 
-Important:
+Важно:
 
-- a tender itself is shared as a cached entity;
-- visibility by request name is user-scoped through `userId`.
+- сам `Tender` хранится как общая сущность;
+- доступность конкретного тендера в списке пользователя определяется через `userId + requestName`.
 
-#### `Conversation`
+### `Conversation`
 
-One conversation per `user + tender`.
+Один диалог на связку:
 
-#### `Message`
+- `user + tender`
 
-Chat messages inside one conversation.
+### `Message`
 
-### Relevance / Scoring Models
+Сообщение внутри разговора.
 
-#### `SearchProfile`
+## Модели релевантности и скоринга
 
-Represents user/business filtering logic.
+### `SearchProfile`
 
-Current fields:
+Описывает бизнес-логику релевантности пользователя.
+
+Ключевые поля:
 
 - `name`
 - `description`
 - `scoringPrompt`
 - `isDefault`
 
-Relations:
+Связи:
 
 - `sources`
 - `rules`
 - `scores`
 
-#### `SearchProfileRule`
+### `SearchProfileRule`
 
-Rule types:
+Типы правил:
 
 - `positive`
 - `negative`
 - `hard_exclude`
 - `instruction`
 
-#### `TenderProfileScore`
+### `TenderProfileScore`
 
-Stores score for one `tender + searchProfile`.
+Хранит score для одной пары:
 
-Key fields:
+- `tender + searchProfile`
+
+Ключевые поля:
 
 - `score`
 - `verdict`
@@ -253,19 +273,19 @@ Key fields:
 - `suggestedRules`
 - `model`
 
-Verdicts:
+Типы verdict:
 
 - `relevant`
 - `maybe`
 - `irrelevant`
 
-### Saby Source Model
+## Модель источников Saby
 
-#### `SabySource`
+### `SabySource`
 
-Current DB model for source definitions.
+Текущая таблица источников.
 
-Fields:
+Поля:
 
 - `name`
 - `requestName`
@@ -276,172 +296,175 @@ Fields:
 - `refreshIntervalMin`
 - `isActive`
 
-Important: current implementation still treats source definitions as synced from `.env`, not yet as fully admin-managed records.
+Важно:
 
-#### `SearchProfileSabySource`
+- сейчас это переходная модель;
+- фактически источники всё ещё частично поднимаются из `.env`, а не полностью управляются через UI.
 
-Join table between profile and source.
+### `SearchProfileSabySource`
 
-## Current SearchProfile Behavior
+Связь между профилем и источником Saby.
 
-Implemented in [lib/services/searchProfileService.ts](G:\Myprojects\TenderBot\lib\services\searchProfileService.ts).
+## Текущее поведение SearchProfile
 
-### Current Reality
+Реализовано в [lib/services/searchProfileService.ts](G:\Myprojects\TenderBot\lib\services\searchProfileService.ts).
 
-Profiles are auto-created if absent.
+### Что происходит сейчас
 
-Two default profiles are created:
+Если профилей нет, они **автосоздаются**.
 
-- main admin profile;
-- test profile.
+Создаются 2 профиля:
 
-This is current code behavior, even though the intended product direction is to replace this with onboarding-based profile creation.
+- основной профиль;
+- тестовый профиль.
 
-### Current Profile Editing
+Это текущее состояние кода, хотя продуктово обсуждался другой вариант: создавать профиль через onboarding.
 
-Profile editing is exposed in the gear popup via:
+### Редактирование профиля
+
+Сейчас редактирование доступно через popup по шестерёнке:
 
 - [components/layout/search-profile-editor.tsx](G:\Myprojects\TenderBot\components\layout\search-profile-editor.tsx)
 
-User can edit:
+Пользователь может менять:
 
-- profile name;
-- profile description;
+- название;
+- описание;
 - scoring prompt;
-- linked sources;
-- rule lists.
+- привязанные источники;
+- правила профиля.
 
-## Current Tender List / Scoring Behavior
+## Текущая логика списка тендеров и scoring
 
-### Tender Loading
+### Загрузка тендеров
 
-Current main page logic:
+На главной странице:
 
-- page loads cached tenders via repository;
-- active request name comes from:
-  - active search profile request names;
-  - or user keywords;
-  - or env-configured request names.
+- берутся cached tenders из репозитория;
+- активный `requestName` определяется через:
+  - активный `SearchProfile`,
+  - либо user keywords,
+  - либо env request names.
 
-### Manual Refresh
+### Ручной refresh
 
-Handled by:
+Обрабатывается в:
 
 - [app/api/tenders/route.ts](G:\Myprojects\TenderBot\app\api\tenders\route.ts)
 
-Flow:
+Последовательность:
 
-1. authenticate current user;
-2. enforce refresh cooldown;
-3. optionally check daily Saby limit;
-4. fetch tenders via parser service;
-5. sync tenders to DB;
-6. scope them to current user + request name;
-7. trigger DeepSeek scoring in background;
-8. return response to UI.
+1. проверка пользователя;
+2. проверка cooldown;
+3. проверка лимита Saby;
+4. вызов parser service;
+5. sync в БД;
+6. привязка тендеров к текущему пользователю и `requestName`;
+7. запуск scoring в фоне;
+8. ответ в UI.
 
-Scoring is intentionally backgrounded so refresh response is not blocked by DeepSeek.
+Scoring вынесен в background, чтобы refresh не зависал из-за DeepSeek.
 
 ### Scoring
 
-Implemented in:
+Реализован в:
 
 - [lib/services/tenderScoringService.ts](G:\Myprojects\TenderBot\lib\services\tenderScoringService.ts)
 
-Current scoring uses:
+На текущем этапе scoring идёт:
 
-- tender card only;
-- not full attachments at shortlist stage.
+- только по карточке тендера;
+- не по полным документам на стадии shortlist.
 
-DeepSeek gets:
+DeepSeek получает:
 
-- profile description;
+- описание профиля;
 - scoring prompt;
-- rules;
-- source context;
-- tender card fields.
+- правила;
+- контекст источников;
+- поля карточки тендера.
 
-### UI Verdicts
+### Фильтрация verdict в UI
 
-Current sidebar supports:
+Сейчас в sidebar есть:
 
 - `Подходят`
 - `Спорные`
 - `Не подходят`
 - `Все`
 
-Default filter currently shows only relevant tenders.
+По умолчанию показываются релевантные тендеры.
 
-### Manual Feedback
+### Ручной feedback
 
-User can override verdict:
+Пользователь может вручную проставить:
 
-- relevant
-- maybe
-- irrelevant
+- `relevant`
+- `maybe`
+- `irrelevant`
 
-Feedback can also be applied back into the profile as rule generation logic.
+И затем использовать feedback для уточнения профиля.
 
-## Current Saby Integration in App Code
+## Текущая интеграция с Saby в коде приложения
 
-### Current Production App Path
+### Рабочий путь в приложении сейчас
 
-The application code currently still uses the old documented Saby parser path in:
+Текущее приложение пока опирается на старый parser path:
 
 - [lib/tender-parser/tenderParserService.ts](G:\Myprojects\TenderBot\lib\tender-parser\tenderParserService.ts)
 
-This path is based on:
+Этот путь использует:
 
-- auth via `online.saby.ru/auth/service/`
-- tender list via `online.saby.ru/tender-api/service/`
-- methods such as:
+- auth через `online.saby.ru/auth/service/`
+- tender API через `online.saby.ru/tender-api/service/`
+- методы вроде:
   - `SbisTenderAPI.GetTenderList`
   - `SbisTenderAPI.GetStatistics`
 
-### Important Discovery
+### Важное найденное отличие
 
-Separate runtime investigation proved that Saby web UI itself uses a different internal RPC flow on `trade.saby.ru`, described below.
+Отдельное исследование через HAR и живые вызовы показало, что веб-клиент Saby работает по другой внутренней RPC-схеме на `trade.saby.ru`.
 
-This internal RPC path is working and may become the future integration path.
+Эта схема может стать более правильным источником данных для будущей интеграции.
 
-## Investigated Internal Saby RPC Flow
+## Найденная внутренняя RPC-схема Saby
 
-The following was confirmed by HAR analysis and live replay on `2026-06-09`.
+Подтверждено на `2026-06-09` по HAR и live replay.
 
-### RPC Endpoints
+### Endpoint'ы
 
-1. query operations:
+1. операции по папкам и query:
 - `https://trade.saby.ru/tender/service/?x_version=26.3202-36.4`
 
-2. tender list operation:
+2. получение тендеров:
 - `https://trade.saby.ru/service/?x_version=26.3202-36.4`
 
-### Confirmed Methods
+## Подтверждённые методы
 
-#### `Query.query_list`
+### `Query.query_list`
 
-Purpose:
+Назначение:
 
-- list root folders and root queries;
-- list queries inside a folder.
+- вернуть корневое дерево папок и запросов;
+- вернуть содержимое конкретной папки.
 
-Behavior confirmed:
+Подтверждённое поведение:
 
-- `parent = null` or `0` returns root entries;
-- `parent = 854874` returns entries inside folder `IT`.
+- `parent = null` или `0` -> корневые папки и query;
+- `parent = 854874` -> содержимое папки `IT`.
 
-Observed live root result:
+Что пришло в корне живым вызовом:
 
-- folder `IT`, id `854874`, kind `folder`
-- query `VR`, id `-1307094`, kind `query`
-- query `Доступная среда`, id `-1391658`, kind `query`
-- query `разработка`, id `-1305708`, kind `query`
+- папка `IT`, id `854874`, `kind = "folder"`
+- запрос `VR`, id `-1307094`, `kind = "query"`
+- запрос `Доступная среда`, id `-1391658`, `kind = "query"`
+- запрос `разработка`, id `-1305708`, `kind = "query"`
 
-Observed child result for folder `IT`:
+Что пришло по папке `IT`:
 
-- query `Web разработка`, id `-1398341`, kind `query`
+- `Web разработка`, id `-1398341`, `kind = "query"`
 
-Minimal meaning of response columns:
+Полезные поля ответа:
 
 - `id`
 - `name`
@@ -453,25 +476,25 @@ Minimal meaning of response columns:
 - `kind`
 - `username`
 
-#### `Query.activate_registry_item`
+### `Query.activate_registry_item`
 
-Purpose:
+Назначение:
 
-- activate chosen query/folder in UI state.
+- активировать выбранный запрос или папку в UI.
 
-Example:
+Пример:
 
 - `query_id = -1398341`
 
-It does not return tender list directly.
+Сам по себе список тендеров не возвращает.
 
-#### `Query.GetQuery`
+### `Query.GetQuery`
 
-Purpose:
+Назначение:
 
-- return full configuration of one saved Saby query.
+- вернуть полную конфигурацию сохранённого запроса.
 
-Confirmed useful output:
+Подтверждённо полезные поля:
 
 - `id`
 - `queryName`
@@ -484,9 +507,9 @@ Confirmed useful output:
 - `okpd2_id_arr`
 - `category_ids`
 - `tradingPlatformIdArray`
-- region and other filters
+- региональные и иные фильтры
 
-Confirmed example:
+Для `Web разработка`:
 
 - `queryName = "Web разработка"`
 - `parent_id = 854874`
@@ -494,24 +517,24 @@ Confirmed example:
 - `fts_string = "React, 1С-Bitrix, битрикс, лендинг"`
 - `fts_string_exclude = ""`
 
-#### `Query.get_counters_by_id`
+### `Query.get_counters_by_id`
 
-Purpose:
+Назначение:
 
-- return counters for folder/query.
+- вернуть счётчики по папке или query.
 
-Observed examples:
+Подтверждённые примеры:
 
-- folder `IT` had total count around `274`
-- `Web разработка` had count `43-46` during tests
+- папка `IT` имела счётчик порядка `274`
+- `Web разработка` имела счётчик `43-46`
 
-#### `Tender.GetList`
+### `Tender.GetList`
 
-Purpose:
+Назначение:
 
-- return tender cards for a query.
+- вернуть список тендеров по query.
 
-Key confirmed request fields:
+Подтверждённые важные поля запроса:
 
 - `fts_string`
 - `fts_string_exclude`
@@ -526,7 +549,7 @@ Key confirmed request fields:
 - `radioSearchTypeExclude`
 - `with_folders`
 
-Useful response fields:
+Полезные поля ответа:
 
 - `id`
 - `tendernumber`
@@ -549,94 +572,98 @@ Useful response fields:
 - `query_ids`
 - `highlight`
 
-Confirmed live replay returned:
+Live replay вернул:
 
-- real tender `recordset`
-- count around `44-46` for `Web разработка`
+- реальный `recordset` тендеров;
+- count около `44-46` для `Web разработка`.
 
-## Daily Limit Findings
+## Проверка суточного лимита
 
-Measured on `2026-06-09` using:
+Проверка сделана на `2026-06-09` через:
 
-- `SbisTenderAPI.GetStatistics` before and after internal RPC calls.
+- `SbisTenderAPI.GetStatistics` до и после внутренних RPC-вызовов.
 
-Measured before:
+До вызовов:
 
 - `DayCounter = 0`
 - `DayLimit = 200`
 - `DayRemaining = 200`
 
-Measured after:
+После вызовов:
 
 - `Query.query_list`
 - `Query.GetQuery`
 - `Tender.GetList`
 
-Result:
+Результат:
 
 - `DayCounter = 0`
 - `DayLimit = 200`
 - `DayRemaining = 200`
 
-Current conclusion:
+Текущий вывод:
 
-- these internal `trade.saby.ru` RPC calls **did not decrement** the documented Saby daily request quota during this test.
+- эти внутренние `trade.saby.ru` RPC-вызовы **не уменьшили** документированный суточный лимит в этом тесте.
 
-This is extremely important, but it is still an observed runtime property, not a guaranteed contract.
+Важно:
 
-## Current Operational Risks
+- это runtime-факт на дату проверки;
+- это не официальная гарантия Saby;
+- поведение может измениться.
 
-### 1. Encoding Damage in Some Files
+## Текущие риски
 
-Some files contain mojibake / broken Cyrillic because of prior encoding issues.
+### 1. Проблемы с кодировкой
 
-Visible examples exist in:
+В части файлов есть mojibake / битая кириллица после старых правок и перекодировок.
+
+Примеры:
 
 - [prisma/schema.prisma](G:\Myprojects\TenderBot\prisma\schema.prisma)
 - [app/page.tsx](G:\Myprojects\TenderBot\app\page.tsx)
 - [lib/services/searchProfileService.ts](G:\Myprojects\TenderBot\lib\services\searchProfileService.ts)
 
-This does not automatically mean runtime breakage, but it is technical debt and documentation noise.
+Это не обязательно ломает runtime, но создаёт техдолг и шум.
 
-### 2. Current App Still Uses Old Saby Parser Path
+### 2. Приложение всё ещё использует старый parser path
 
-The app code currently refreshes tenders through the older parser path, not yet through the newly discovered internal RPC flow.
+Текущий refresh в коде пока идёт через старый `SbisTenderAPI.GetTenderList`, а не через найденную внутреннюю RPC-схему.
 
-### 3. SearchProfile Auto-Creation
+### 3. Автосоздание профилей
 
-Current code auto-creates two default profiles.
+Сейчас код создаёт 2 дефолтных профиля автоматически.
 
-Planned future onboarding flow is not yet implemented.
+Целевой onboarding при первом входе пока не реализован.
 
-### 4. Source Definitions Are Still Partially Env-Driven
+### 4. Источники Saby всё ещё частично управляются через `.env`
 
-`SabySource` is already in DB, but current population still starts from:
+Несмотря на наличие `SabySource` в БД, сейчас список источников стартово синхронизируется из:
 
 - `.env`
 - `SABY_TENDER_REQUEST_NAMES`
 
-This is transitional architecture.
+Это переходный этап архитектуры.
 
-## Important API Routes
+## Важные API routes
 
 - [app/api/tenders/route.ts](G:\Myprojects\TenderBot\app\api\tenders\route.ts)
-  - manual tender refresh
+  - ручной refresh тендеров
 - [app/api/chat/route.ts](G:\Myprojects\TenderBot\app\api\chat\route.ts)
-  - chat with selected tender
+  - чат по выбранному тендеру
 - [app/api/conversations/route.ts](G:\Myprojects\TenderBot\app\api\conversations\route.ts)
-  - list conversations
+  - список разговоров
 - [app/api/conversations/[tenderExternalId]/route.ts](G:\Myprojects\TenderBot\app\api\conversations\[tenderExternalId]\route.ts)
-  - delete conversation
+  - удаление разговора
 - [app/api/tenders/[tenderExternalId]/documents/route.ts](G:\Myprojects\TenderBot\app\api\tenders\[tenderExternalId]\documents\route.ts)
-  - load / process tender documents
+  - документы тендера
 - [app/api/tenders/[tenderExternalId]/score-feedback/route.ts](G:\Myprojects\TenderBot\app\api\tenders\[tenderExternalId]\score-feedback\route.ts)
-  - save scoring feedback
+  - feedback по scoring
 - [app/api/search-profiles/[profileId]/route.ts](G:\Myprojects\TenderBot\app\api\search-profiles\[profileId]\route.ts)
-  - update profile
+  - обновление профиля
 - [app/api/saby/statistics/route.ts](G:\Myprojects\TenderBot\app\api\saby\statistics\route.ts)
-  - current statistics endpoint
+  - текущая статистика Saby
 
-## Current UI Components Worth Knowing
+## Важные UI-компоненты
 
 - [components/layout/app-shell.tsx](G:\Myprojects\TenderBot\components\layout\app-shell.tsx)
 - [components/layout/sidebar.tsx](G:\Myprojects\TenderBot\components\layout\sidebar.tsx)
@@ -644,9 +671,9 @@ This is transitional architecture.
 - [components/layout/refresh-tenders-button.tsx](G:\Myprojects\TenderBot\components\layout\refresh-tenders-button.tsx)
 - [components/chat/chat-panel.tsx](G:\Myprojects\TenderBot\components\chat\chat-panel.tsx)
 
-## Known Temporary Investigation Files
+## Временные исследовательские файлы
 
-These files exist for investigation and are not product runtime files:
+Эти файлы относятся к исследованию интеграции и не являются бизнес-логикой приложения:
 
 - `trade.saby.ru.har`
 - `saby-tree-load.har`
@@ -657,70 +684,71 @@ These files exist for investigation and are not product runtime files:
 - `tmp-query-list.json`
 - `tmp-tender-getlist-live.json`
 
-Any future agent should treat these as investigation artifacts, not business code.
+Любая следующая модель должна воспринимать их как артефакты исследования, а не как продовый код.
 
-## Immediate Architectural Direction
+## Ближайшее архитектурное направление
 
-Based on current discoveries, the likely better long-term Saby integration is:
+На основании найденного сейчас логично двигаться так:
 
-1. use internal Saby RPC tree:
+1. использовать внутреннюю RPC-схему Saby:
    - `Query.query_list`
    - `Query.GetQuery`
    - `Tender.GetList`
 
-2. model source hierarchy as:
-   - folder = broad industry
-   - query = narrower saved search
+2. моделировать источники как:
+   - папка = широкая отрасль;
+   - query = более узкий сохранённый запрос;
 
-3. let `SearchProfile` choose and score across those query sources.
+3. строить `SearchProfile` поверх этих query-источников;
 
-This is not fully migrated in app code yet.
+4. оставлять scoring и feedback как слой персонализации поверх широкого потока Saby.
 
-## Commands Commonly Used During Development
+Это направление уже технически подтверждено, но код приложения пока не мигрирован на него полностью.
 
-- install / run:
+## Часто используемые команды
+
+Запуск:
 ```powershell
 npm install
 npm run dev
 ```
 
-- typecheck:
+Проверка типов:
 ```powershell
 npm run typecheck
 ```
 
-- lint:
+Линт:
 ```powershell
 npm run lint
 ```
 
-- build:
+Сборка:
 ```powershell
 npm run build
 ```
 
-- prisma generate:
+Prisma generate:
 ```powershell
 npx prisma generate
 ```
 
-- prisma migrate:
+Prisma migrate:
 ```powershell
 npx prisma migrate deploy
 ```
 
-## Rules for Any Future LLM Working on This Repo
+## Правила для любой следующей нейросети
 
-1. Read this file first.
-2. Verify whether current code still matches this file.
-3. If architecture changed, update this file before or alongside code changes.
-4. Do not assume planned features are implemented.
-5. Distinguish:
-   - current implementation,
-   - experimental runtime findings,
-   - planned architecture.
-6. Be careful with encoding in files containing Cyrillic.
+1. Сначала прочитать этот файл.
+2. Проверить, соответствует ли код текущему описанию.
+3. Если структура изменилась, обновить этот файл.
+4. Не путать:
+   - то, что уже реализовано;
+   - то, что найдено в runtime;
+   - то, что только запланировано.
+5. Осторожно работать с файлами, где есть кириллица и следы старых проблем кодировки.
 
-## Short One-Paragraph Summary
+## Короткое резюме в одном абзаце
 
-This project is a Next.js + Prisma + PostgreSQL tender analysis application that authenticates users via NextAuth, fetches and caches tenders from Saby, scores tender cards with DeepSeek through `SearchProfile` rules, supports manual feedback, and is currently in transition from an older documented Saby API path toward a more capable internal `trade.saby.ru` RPC integration based on `Query.query_list`, `Query.GetQuery`, and `Tender.GetList`, with confirmed folder/query hierarchy and no observed daily limit decrement for those internal RPC calls during tests on `2026-06-09`.
+`AI Tender Bot` — это приложение на `Next.js + Prisma + PostgreSQL` для получения и кэширования тендеров из Saby, оценки их релевантности через `SearchProfile` и `DeepSeek`, ручного feedback по скорингу и LLM-анализа тендера и документов; при этом текущая кодовая база всё ещё использует старый путь `SbisTenderAPI.GetTenderList`, но уже подтверждена рабочая внутренняя RPC-схема `trade.saby.ru` через `Query.query_list`, `Query.GetQuery` и `Tender.GetList`, включая дерево папок/запросов и отсутствие зафиксированного расхода документированного суточного лимита в тестах от `2026-06-09`.
