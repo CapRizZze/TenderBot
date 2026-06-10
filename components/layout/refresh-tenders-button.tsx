@@ -187,8 +187,8 @@ export function RefreshTendersButton({
       {!compact ? (
         <>
           <p className="text-xs text-muted-foreground">
-            Запрос расходует суточный лимит Saby. Навигация по интерфейсу использует локальный
-            кэш.
+            Запрос расходует суточный лимит Saby. Навигация по интерфейсу использует
+            локальный кэш.
           </p>
           {isCooldownActive ? (
             <p className="text-xs text-muted-foreground">

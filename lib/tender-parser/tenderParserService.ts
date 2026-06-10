@@ -26,7 +26,7 @@ export interface ITenderParserService {
 }
 
 export class SabyDailyLimitError extends Error {
-  constructor(message = "Р”РѕСЃС‚РёРіРЅСѓС‚ СЃСѓС‚РѕС‡РЅС‹Р№ Р»РёРјРёС‚ Saby API РїРѕ РїРѕР»СѓС‡РµРЅРёСЋ С‚РѕСЂРіРѕРІ") {
+  constructor(message = "Достигнут суточный лимит Saby API по получению торгов") {
     super(message);
     this.name = "SabyDailyLimitError";
   }
@@ -51,10 +51,10 @@ class TenderParserService implements ITenderParserService {
     const mockedTenders: Tender[] = [
       {
         id: "zakupki-001",
-        title: "РџРѕСЃС‚Р°РІРєР° СЃРµСЂРІРµСЂРЅРѕРіРѕ РѕР±РѕСЂСѓРґРѕРІР°РЅРёСЏ",
+        title: "Поставка серверного оборудования",
         description:
-          "Р—Р°РєСѓРїРєР° СЃРµСЂРІРµСЂРѕРІ, СЃРёСЃС‚РµРј С…СЂР°РЅРµРЅРёСЏ РґР°РЅРЅС‹С… Рё СЃРµС‚РµРІРѕРіРѕ РѕР±РѕСЂСѓРґРѕРІР°РЅРёСЏ РґР»СЏ РјРѕРґРµСЂРЅРёР·Р°С†РёРё РёРЅС„СЂР°СЃС‚СЂСѓРєС‚СѓСЂС‹.",
-        customer: "Р“Р‘РЈ РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ СЃРёСЃС‚РµРјС‹",
+          "Закупка серверов, систем хранения данных и сетевого оборудования для модернизации инфраструктуры.",
+        customer: "ГБУ Информационные системы",
         deadline: "2026-06-20T18:00:00.000Z",
         budget: 12_500_000,
         url: "https://example.com/tenders/zakupki-001",
@@ -62,10 +62,10 @@ class TenderParserService implements ITenderParserService {
       },
       {
         id: "commercial-002",
-        title: "Р Р°Р·СЂР°Р±РѕС‚РєР° РјРѕРґСѓР»СЏ Р°РЅР°Р»РёС‚РёРєРё Р·Р°РєСѓРїРѕРє",
+        title: "Разработка модуля аналитики закупок",
         description:
-          "РљРѕРјРјРµСЂС‡РµСЃРєРёР№ С‚РµРЅРґРµСЂ РЅР° СЂР°Р·СЂР°Р±РѕС‚РєСѓ РІРµР±-РјРѕРґСѓР»СЏ Р°РЅР°Р»РёС‚РёРєРё, РѕС‚С‡РµС‚РЅРѕСЃС‚Рё Рё РёРЅС‚РµРіСЂР°С†РёРё СЃ РІРЅСѓС‚СЂРµРЅРЅРµР№ CRM.",
-        customer: "Р С›Р С›Р С› Р СћР С•РЎР‚Р С–Р С•Р Р†Р В°РЎРЏ Р С—Р В»Р В°РЎвЂљРЎвЂћР С•РЎР‚Р СР В°",
+          "Коммерческий тендер на разработку веб-модуля аналитики, отчетности и интеграции с внутренней CRM.",
+        customer: "ООО Цифровая платформа",
         deadline: "2026-07-05T15:00:00.000Z",
         budget: 4_800_000,
         url: "https://example.com/tenders/commercial-002",
@@ -73,10 +73,10 @@ class TenderParserService implements ITenderParserService {
       },
       {
         id: "zakupki-003",
-        title: "РЎРѕРїСЂРѕРІРѕР¶РґРµРЅРёРµ РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅРѕР№ СЃРёСЃС‚РµРјС‹",
+        title: "Сопровождение информационной системы",
         description:
-          "РћРєР°Р·Р°РЅРёРµ СѓСЃР»СѓРі С‚РµС…РЅРёС‡РµСЃРєРѕР№ РїРѕРґРґРµСЂР¶РєРё, РјРѕРЅРёС‚РѕСЂРёРЅРіР° Рё РґРѕСЂР°Р±РѕС‚РєРё РґРµР№СЃС‚РІСѓСЋС‰РµР№ РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅРѕР№ СЃРёСЃС‚РµРјС‹.",
-        customer: "Р¤РљРЈ Р¦РµРЅС‚СЂ С†РёС„СЂРѕРІС‹С… СЂРµС€РµРЅРёР№",
+          "Оказание услуг технической поддержки, мониторинга и доработки действующей информационной системы.",
+        customer: "ФКУ Центр цифровых решений",
         deadline: "2026-06-30T12:00:00.000Z",
         url: "https://example.com/tenders/zakupki-003",
         attachments: [],
@@ -557,10 +557,10 @@ class SabyTenderParserService implements ITenderParserService {
 
       unique.add(normalized);
 
-      if (normalized.startsWith("Р РЋР вЂР ВР РЋ.")) {
-        unique.add(normalized.replace(/^Р РЋР вЂР ВР РЋ\./u, ""));
+      if (normalized.startsWith("СБИС.")) {
+        unique.add(normalized.replace(/^СБИС\./u, ""));
       } else if (!normalized.includes(".")) {
-        unique.add(`Р РЋР вЂР ВР РЋ.${normalized}`);
+        unique.add(`СБИС.${normalized}`);
       }
     }
 
@@ -675,7 +675,7 @@ function isSabyDailyLimitMessage(message: string): boolean {
   const normalized = message.toLocaleLowerCase("ru-RU");
 
   return (
-    normalized.includes("СЃСѓС‚РѕС‡") ||
+    normalized.includes("суточ") ||
     normalized.includes("daily limit") ||
     normalized.includes("limit")
   );
@@ -1176,7 +1176,7 @@ function mapRecordToTender(
     "initiator_full_name",
     "organizer_full_name",
   ]);
-  const customer = toNonEmptyString(customerRaw) ?? "РќРµ СѓРєР°Р·Р°РЅ";
+  const customer = toNonEmptyString(customerRaw) ?? "Не указан";
 
   const placedAtRaw = pickField(record, [
     "publish_date",
@@ -1427,7 +1427,7 @@ function mapRecordToAttachment(
   const name =
     toNonEmptyString(nameRaw) ??
     getFileNameFromUrl(rawUrl) ??
-    `Р’Р»РѕР¶РµРЅРёРµ ${index + 1}`;
+    `Вложение ${index + 1}`;
   const mimeTypeRaw = pickField(record, [
     "mimeType",
     "mime_type",
