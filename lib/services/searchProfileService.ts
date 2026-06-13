@@ -1,69 +1,67 @@
 import type {
-  SabySource,
+  SabyFolder,
+  SabyQuery,
   SearchProfile,
   SearchProfileRule,
-  SearchProfileSabySource,
+  SearchProfileSabyQuery,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import {
-  findActiveSabySources,
-  syncConfiguredSabySources,
-} from "@/lib/services/sabySourceService";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type { SearchProfileUpdateDto } from "@/types/search-profile-update.dto";
 
 type SearchProfileWithRelations = SearchProfile & {
-  sources: Array<
-    SearchProfileSabySource & {
-      sabySource: SabySource;
+  queries: Array<
+    SearchProfileSabyQuery & {
+      sabyQuery: SabyQuery & {
+        folder: SabyFolder | null;
+      };
     }
   >;
   rules: SearchProfileRule[];
 };
 
-const DEFAULT_MAIN_PROFILE_NAME = "Основной админ";
-const DEFAULT_TEST_PROFILE_NAME = "Тестовый профиль";
+const DEFAULT_MAIN_PROFILE_NAME = "РћСЃРЅРѕРІРЅРѕР№ Р°РґРјРёРЅ";
+const DEFAULT_TEST_PROFILE_NAME = "РўРµСЃС‚РѕРІС‹Р№ РїСЂРѕС„РёР»СЊ";
 
 const MAIN_PROFILE_DESCRIPTION =
-  "Компания занимается разработкой, внедрением и сопровождением программного обеспечения. Релевантны тендеры на ПО, информационные системы, интеграции, поддержку, аналитику и автоматизацию.";
+  "РљРѕРјРїР°РЅРёСЏ Р·Р°РЅРёРјР°РµС‚СЃСЏ СЂР°Р·СЂР°Р±РѕС‚РєРѕР№, РІРЅРµРґСЂРµРЅРёРµРј Рё СЃРѕРїСЂРѕРІРѕР¶РґРµРЅРёРµРј РїСЂРѕРіСЂР°РјРјРЅРѕРіРѕ РѕР±РµСЃРїРµС‡РµРЅРёСЏ. Р РµР»РµРІР°РЅС‚РЅС‹ С‚РµРЅРґРµСЂС‹ РЅР° РџРћ, РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ СЃРёСЃС‚РµРјС‹, РёРЅС‚РµРіСЂР°С†РёРё, РїРѕРґРґРµСЂР¶РєСѓ, Р°РЅР°Р»РёС‚РёРєСѓ Рё Р°РІС‚РѕРјР°С‚РёР·Р°С†РёСЋ.";
 
 const TEST_PROFILE_DESCRIPTION =
-  "Тестовый профиль для сравнения выдачи. Считать релевантными только тендеры с явной IT-составляющей: разработкой ПО, цифровыми сервисами, интеграциями или сопровождением программных продуктов.";
+  "РўРµСЃС‚РѕРІС‹Р№ РїСЂРѕС„РёР»СЊ РґР»СЏ СЃСЂР°РІРЅРµРЅРёСЏ РІС‹РґР°С‡Рё. РЎС‡РёС‚Р°С‚СЊ СЂРµР»РµРІР°РЅС‚РЅС‹РјРё С‚РѕР»СЊРєРѕ С‚РµРЅРґРµСЂС‹ СЃ СЏРІРЅРѕР№ IT-СЃРѕСЃС‚Р°РІР»СЏСЋС‰РµР№: СЂР°Р·СЂР°Р±РѕС‚РєРѕР№ РџРћ, С†РёС„СЂРѕРІС‹РјРё СЃРµСЂРІРёСЃР°РјРё, РёРЅС‚РµРіСЂР°С†РёСЏРјРё РёР»Рё СЃРѕРїСЂРѕРІРѕР¶РґРµРЅРёРµРј РїСЂРѕРіСЂР°РјРјРЅС‹С… РїСЂРѕРґСѓРєС‚РѕРІ.";
 
 const MAIN_PROFILE_PROMPT =
-  "Оцени релевантность тендера для компании-разработчика программного обеспечения. Высокая релевантность: разработка ПО, внедрение информационных систем, интеграции, аналитика, сопровождение ПО, техническая поддержка цифровых сервисов. Низкая релевантность: строительство, ремонт, поставка физического оборудования без IT-составляющей.";
+  "РћС†РµРЅРё СЂРµР»РµРІР°РЅС‚РЅРѕСЃС‚СЊ С‚РµРЅРґРµСЂР° РґР»СЏ РєРѕРјРїР°РЅРёРё-СЂР°Р·СЂР°Р±РѕС‚С‡РёРєР° РїСЂРѕРіСЂР°РјРјРЅРѕРіРѕ РѕР±РµСЃРїРµС‡РµРЅРёСЏ. Р’С‹СЃРѕРєР°СЏ СЂРµР»РµРІР°РЅС‚РЅРѕСЃС‚СЊ: СЂР°Р·СЂР°Р±РѕС‚РєР° РџРћ, РІРЅРµРґСЂРµРЅРёРµ РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹С… СЃРёСЃС‚РµРј, РёРЅС‚РµРіСЂР°С†РёРё, Р°РЅР°Р»РёС‚РёРєР°, СЃРѕРїСЂРѕРІРѕР¶РґРµРЅРёРµ РџРћ, С‚РµС…РЅРёС‡РµСЃРєР°СЏ РїРѕРґРґРµСЂР¶РєР° С†РёС„СЂРѕРІС‹С… СЃРµСЂРІРёСЃРѕРІ. РќРёР·РєР°СЏ СЂРµР»РµРІР°РЅС‚РЅРѕСЃС‚СЊ: СЃС‚СЂРѕРёС‚РµР»СЊСЃС‚РІРѕ, СЂРµРјРѕРЅС‚, РїРѕСЃС‚Р°РІРєР° С„РёР·РёС‡РµСЃРєРѕРіРѕ РѕР±РѕСЂСѓРґРѕРІР°РЅРёСЏ Р±РµР· IT-СЃРѕСЃС‚Р°РІР»СЏСЋС‰РµР№.";
 
 const TEST_PROFILE_PROMPT =
-  "Оцени релевантность строго. Профиль ищет только разработку, внедрение или сопровождение программного обеспечения. Не считать релевантными строительные, монтажные, ремонтные работы, поставку пандусов, поручней, тактильной плитки, указателей и других физических конструкций, если нет явной разработки ПО.";
+  "РћС†РµРЅРё СЂРµР»РµРІР°РЅС‚РЅРѕСЃС‚СЊ СЃС‚СЂРѕРіРѕ. РџСЂРѕС„РёР»СЊ РёС‰РµС‚ С‚РѕР»СЊРєРѕ СЂР°Р·СЂР°Р±РѕС‚РєСѓ, РІРЅРµРґСЂРµРЅРёРµ РёР»Рё СЃРѕРїСЂРѕРІРѕР¶РґРµРЅРёРµ РїСЂРѕРіСЂР°РјРјРЅРѕРіРѕ РѕР±РµСЃРїРµС‡РµРЅРёСЏ. РќРµ СЃС‡РёС‚Р°С‚СЊ СЂРµР»РµРІР°РЅС‚РЅС‹РјРё СЃС‚СЂРѕРёС‚РµР»СЊРЅС‹Рµ, РјРѕРЅС‚Р°Р¶РЅС‹Рµ, СЂРµРјРѕРЅС‚РЅС‹Рµ СЂР°Р±РѕС‚С‹, РїРѕСЃС‚Р°РІРєСѓ РїР°РЅРґСѓСЃРѕРІ, РїРѕСЂСѓС‡РЅРµР№, С‚Р°РєС‚РёР»СЊРЅРѕР№ РїР»РёС‚РєРё, СѓРєР°Р·Р°С‚РµР»РµР№ Рё РґСЂСѓРіРёС… С„РёР·РёС‡РµСЃРєРёС… РєРѕРЅСЃС‚СЂСѓРєС†РёР№, РµСЃР»Рё РЅРµС‚ СЏРІРЅРѕР№ СЂР°Р·СЂР°Р±РѕС‚РєРё РџРћ.";
 
 function defaultRulesForMainProfile() {
   return [
-    { type: "positive" as const, value: "разработка ПО", weight: 5 },
-    { type: "positive" as const, value: "информационная система", weight: 4 },
-    { type: "positive" as const, value: "сопровождение ПО", weight: 4 },
-    { type: "negative" as const, value: "ремонт", weight: 3 },
-    { type: "negative" as const, value: "строительство", weight: 4 },
+    { type: "positive" as const, value: "СЂР°Р·СЂР°Р±РѕС‚РєР° РџРћ", weight: 5 },
+    { type: "positive" as const, value: "РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅР°СЏ СЃРёСЃС‚РµРјР°", weight: 4 },
+    { type: "positive" as const, value: "СЃРѕРїСЂРѕРІРѕР¶РґРµРЅРёРµ РџРћ", weight: 4 },
+    { type: "negative" as const, value: "СЂРµРјРѕРЅС‚", weight: 3 },
+    { type: "negative" as const, value: "СЃС‚СЂРѕРёС‚РµР»СЊСЃС‚РІРѕ", weight: 4 },
   ];
 }
 
 function defaultRulesForTestProfile() {
   return [
-    { type: "positive" as const, value: "программное обеспечение", weight: 6 },
-    { type: "positive" as const, value: "разработка", weight: 4 },
-    { type: "hard_exclude" as const, value: "пандус", weight: 10 },
-    { type: "hard_exclude" as const, value: "поручни", weight: 10 },
-    { type: "hard_exclude" as const, value: "строительные работы", weight: 10 },
+    { type: "positive" as const, value: "РїСЂРѕРіСЂР°РјРјРЅРѕРµ РѕР±РµСЃРїРµС‡РµРЅРёРµ", weight: 6 },
+    { type: "positive" as const, value: "СЂР°Р·СЂР°Р±РѕС‚РєР°", weight: 4 },
+    { type: "hard_exclude" as const, value: "РїР°РЅРґСѓСЃ", weight: 10 },
+    { type: "hard_exclude" as const, value: "РїРѕСЂСѓС‡РЅРё", weight: 10 },
+    { type: "hard_exclude" as const, value: "СЃС‚СЂРѕРёС‚РµР»СЊРЅС‹Рµ СЂР°Р±РѕС‚С‹", weight: 10 },
   ];
 }
 
-function createSourceLinkData(sourceIds: string[]) {
-  return sourceIds.map((sabySourceId) => ({ sabySourceId }));
+function createQueryLinkData(queryIds: string[]) {
+  return queryIds.map((sabyQueryId) => ({ sabyQueryId }));
 }
 
 export async function getOrCreateSearchProfiles(
   userId: string,
-  availableRequestNames: string[],
 ): Promise<SearchProfileDto[]> {
   const existingProfiles = await findSearchProfiles(userId);
 
@@ -71,10 +69,18 @@ export async function getOrCreateSearchProfiles(
     return existingProfiles.map(mapSearchProfileToDto);
   }
 
-  const sources = await syncConfiguredSabySources(availableRequestNames);
-  const sourceIds = sources.map((source) => source.id);
+  const activeQueries = await prisma.sabyQuery.findMany({
+    where: {
+      isActive: true,
+    },
+    select: {
+      id: true,
+    },
+    orderBy: [{ name: "asc" }],
+  });
+  const queryIds = activeQueries.map((query) => query.id);
 
-  if (sourceIds.length === 0) {
+  if (queryIds.length === 0) {
     return [];
   }
 
@@ -86,8 +92,8 @@ export async function getOrCreateSearchProfiles(
         description: MAIN_PROFILE_DESCRIPTION,
         scoringPrompt: MAIN_PROFILE_PROMPT,
         isDefault: true,
-        sources: {
-          create: createSourceLinkData(sourceIds),
+        queries: {
+          create: createQueryLinkData(queryIds),
         },
         rules: {
           create: defaultRulesForMainProfile(),
@@ -102,8 +108,8 @@ export async function getOrCreateSearchProfiles(
         description: TEST_PROFILE_DESCRIPTION,
         scoringPrompt: TEST_PROFILE_PROMPT,
         isDefault: false,
-        sources: {
-          create: createSourceLinkData(sourceIds),
+        queries: {
+          create: createQueryLinkData(queryIds),
         },
         rules: {
           create: defaultRulesForTestProfile(),
@@ -124,9 +130,13 @@ export async function findSearchProfiles(userId: string) {
   return prisma.searchProfile.findMany({
     where: { userId },
     include: {
-      sources: {
+      queries: {
         include: {
-          sabySource: true,
+          sabyQuery: {
+            include: {
+              folder: true,
+            },
+          },
         },
         orderBy: {
           createdAt: "asc",
@@ -157,16 +167,17 @@ export async function findActiveSearchProfile(
 export function mapSearchProfileToDto(
   profile: SearchProfileWithRelations,
 ): SearchProfileDto {
-  const sources = profile.sources.map((link) => ({
-    id: link.sabySource.id,
-    name: link.sabySource.name,
-    requestName: link.sabySource.requestName,
-    description: link.sabySource.description,
-    includeKeywordsText: link.sabySource.includeKeywordsText,
-    excludeKeywordsText: link.sabySource.excludeKeywordsText,
-    refreshPriority: link.sabySource.refreshPriority,
-    refreshIntervalMin: link.sabySource.refreshIntervalMin,
-    isActive: link.sabySource.isActive,
+  const queries = profile.queries.map((link) => ({
+    id: link.sabyQuery.id,
+    sabyQueryId: link.sabyQuery.sabyQueryId,
+    folderId: link.sabyQuery.folderId,
+    folderName: link.sabyQuery.folder?.name ?? null,
+    name: link.sabyQuery.name,
+    parentFolderName: link.sabyQuery.parentFolderName,
+    ftsString: link.sabyQuery.ftsString,
+    ftsStringExclude: link.sabyQuery.ftsStringExclude,
+    isActive: link.sabyQuery.isActive,
+    lastSyncedAt: link.sabyQuery.lastSyncedAt?.toISOString(),
   }));
 
   return {
@@ -175,8 +186,7 @@ export function mapSearchProfileToDto(
     description: profile.description,
     scoringPrompt: profile.scoringPrompt,
     isDefault: profile.isDefault,
-    sources,
-    requestNames: sources.map((source) => source.requestName),
+    queries,
     rules: profile.rules.map((rule) => ({
       id: rule.id,
       type: rule.type,
@@ -199,15 +209,24 @@ export async function updateSearchProfile(
   });
 
   if (!existingProfile) {
-    throw new Error("Профиль поиска не найден.");
+    throw new Error("РџСЂРѕС„РёР»СЊ РїРѕРёСЃРєР° РЅРµ РЅР°Р№РґРµРЅ.");
   }
 
-  const activeSources = await findActiveSabySources();
-  const allowedSourceIds = new Set(activeSources.map((source) => source.id));
-  const invalidSourceIds = input.sourceIds.filter((sourceId) => !allowedSourceIds.has(sourceId));
+  const activeQueries = await prisma.sabyQuery.findMany({
+    where: {
+      isActive: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+  const allowedQueryIds = new Set(activeQueries.map((query) => query.id));
+  const invalidQueryIds = input.queryIds.filter(
+    (queryId) => !allowedQueryIds.has(queryId),
+  );
 
-  if (invalidSourceIds.length > 0) {
-    throw new Error("Выбраны недоступные источники Saby.");
+  if (invalidQueryIds.length > 0) {
+    throw new Error("Р’С‹Р±СЂР°РЅС‹ РЅРµРґРѕСЃС‚СѓРїРЅС‹Рµ Р·Р°РїСЂРѕСЃС‹ Saby.");
   }
 
   await prisma.$transaction(async (transaction) => {
@@ -220,16 +239,18 @@ export async function updateSearchProfile(
       },
     });
 
-    await transaction.searchProfileSabySource.deleteMany({
+    await transaction.searchProfileSabyQuery.deleteMany({
       where: { searchProfileId },
     });
 
-    await transaction.searchProfileSabySource.createMany({
-      data: input.sourceIds.map((sabySourceId) => ({
-        searchProfileId,
-        sabySourceId,
-      })),
-    });
+    if (input.queryIds.length > 0) {
+      await transaction.searchProfileSabyQuery.createMany({
+        data: input.queryIds.map((sabyQueryId) => ({
+          searchProfileId,
+          sabyQueryId,
+        })),
+      });
+    }
 
     await transaction.searchProfileRule.deleteMany({
       where: { searchProfileId },
@@ -272,9 +293,13 @@ export async function updateSearchProfile(
   const updatedProfile = await prisma.searchProfile.findUniqueOrThrow({
     where: { id: searchProfileId },
     include: {
-      sources: {
+      queries: {
         include: {
-          sabySource: true,
+          sabyQuery: {
+            include: {
+              folder: true,
+            },
+          },
         },
         orderBy: {
           createdAt: "asc",

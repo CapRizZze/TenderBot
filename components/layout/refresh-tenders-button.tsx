@@ -10,6 +10,7 @@ import { getErrorMessageFromResponse } from "@/utils/api-client";
 
 interface RefreshTendersButtonProps {
   requestName: string;
+  queryId?: number;
   compact?: boolean;
   label?: string;
 }
@@ -32,6 +33,7 @@ const MESSAGE_AUTOHIDE_MS = 6000;
 
 export function RefreshTendersButton({
   requestName,
+  queryId,
   compact = false,
   label = "Обновить из Saby",
 }: RefreshTendersButtonProps) {
@@ -41,7 +43,10 @@ export function RefreshTendersButton({
   const [isError, setIsError] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
-  const storageKey = useMemo(() => `saby-refresh-cooldown:${requestName}`, [requestName]);
+  const storageKey = useMemo(
+    () => `saby-refresh-cooldown:${queryId ?? requestName}`,
+    [queryId, requestName],
+  );
 
   useEffect(() => {
     const storedValue = window.localStorage.getItem(storageKey);
@@ -110,9 +115,16 @@ export function RefreshTendersButton({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          keywords: [requestName],
-        }),
+        body: JSON.stringify(
+          queryId
+            ? {
+                keywords: [requestName],
+                queryId,
+              }
+            : {
+                keywords: [requestName],
+              },
+        ),
       });
 
       if (!response.ok) {
@@ -140,7 +152,9 @@ export function RefreshTendersButton({
       router.refresh();
     } catch (error) {
       setIsError(true);
-      setMessage(error instanceof Error ? error.message : "Не удалось обновить тендеры из Saby");
+      setMessage(
+        error instanceof Error ? error.message : "Не удалось обновить тендеры из Saby",
+      );
     } finally {
       setIsRefreshing(false);
     }

@@ -1,8 +1,10 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import type {
+  SabyQuery,
   SabySource,
   SearchProfile,
+  SearchProfileSabyQuery,
   SearchProfileRule,
   SearchProfileSabySource,
   Tender as PrismaTender,
@@ -18,6 +20,11 @@ type SearchProfileWithRelations = SearchProfile & {
       sabySource: SabySource;
     }
   >;
+  queries: Array<
+    SearchProfileSabyQuery & {
+      sabyQuery: SabyQuery;
+    }
+  >;
   rules: SearchProfileRule[];
 };
 
@@ -28,6 +35,7 @@ interface ParsedScore {
   positiveSignals: string[];
   negativeSignals: string[];
   suggestedRules: string[];
+  model?: string;
 }
 
 interface ParsedProfileRule {
@@ -44,29 +52,52 @@ const deepSeek = createOpenAICompatible({
   baseURL: deepSeekEnv.DEEPSEEK_BASE_URL,
 });
 
+const LOCAL_SCORING_MODEL = "local-rules";
+
 export async function scoreTendersForRequestName(input: {
   userId: string;
   requestName: string;
   tenders: Tender[];
+  sabyQueryId?: string;
 }) {
   const profiles = await prisma.searchProfile.findMany({
     where: {
       userId: input.userId,
-      sources: {
-        some: {
-          sabySource: {
-            requestName: {
-              equals: input.requestName,
-              mode: "insensitive",
+      OR: [
+        {
+          ...(input.sabyQueryId
+            ? {
+                queries: {
+                  some: {
+                    sabyQueryId: input.sabyQueryId,
+                  },
+                },
+              }
+            : {}),
+        },
+        {
+          sources: {
+            some: {
+              sabySource: {
+                requestName: {
+                  equals: input.requestName,
+                  mode: "insensitive",
+                },
+              },
             },
           },
         },
-      },
+      ],
     },
     include: {
       sources: {
         include: {
           sabySource: true,
+        },
+      },
+      queries: {
+        include: {
+          sabyQuery: true,
         },
       },
       rules: {
@@ -116,6 +147,11 @@ export async function saveTenderScoreFeedback(input: {
           sources: {
             include: {
               sabySource: true,
+            },
+          },
+          queries: {
+            include: {
+              sabyQuery: true,
             },
           },
           rules: {
@@ -196,55 +232,72 @@ async function requestDeepSeekScore(
   profile: SearchProfileWithRelations,
   tender: Tender,
 ): Promise<ParsedScore> {
-  const result = await generateText({
-    model: deepSeek(deepSeekEnv.DEEPSEEK_MODEL),
-    temperature: 0,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You score tender card relevance for a SaaS tender filtering product.",
-          "Return only strict JSON without markdown.",
-          "Schema: {\"score\":0-100,\"verdict\":\"relevant|maybe|irrelevant\",\"reasons\":[\"...\"],\"positiveSignals\":[\"...\"],\"negativeSignals\":[\"...\"],\"suggestedRules\":[\"...\"]}.",
-          "Score 80-100 means clearly relevant, 40-79 means maybe, 0-39 means irrelevant.",
-          profile.scoringPrompt,
-        ].join("\n"),
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          profile: {
-            name: profile.name,
-            description: profile.description,
-            rules: profile.rules.map((rule) => ({
-              type: rule.type,
-              value: rule.value,
-              weight: rule.weight,
-            })),
-            sabySources: profile.sources.map((link) => ({
-              id: link.sabySource.id,
-              name: link.sabySource.name,
-              requestName: link.sabySource.requestName,
-              description: link.sabySource.description,
-              includeKeywordsText: link.sabySource.includeKeywordsText,
-              excludeKeywordsText: link.sabySource.excludeKeywordsText,
-            })),
-          },
-          tender: {
-            title: tender.title,
-            description: tender.description,
-            customer: tender.customer,
-            budget: tender.budget ?? null,
-            deadline: tender.deadline,
-            placedAt: tender.placedAt ?? null,
-            number: tender.number ?? null,
-          },
-        }),
-      },
-    ],
-  });
+  if (!hasUsableDeepSeekKey()) {
+    return scoreTenderLocally(profile, tender);
+  }
 
-  return normalizeScoreResponse(result.text);
+  try {
+    const result = await generateText({
+      model: deepSeek(deepSeekEnv.DEEPSEEK_MODEL),
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You score tender card relevance for a SaaS tender filtering product.",
+            "Return only strict JSON without markdown.",
+            "Schema: {\"score\":0-100,\"verdict\":\"relevant|maybe|irrelevant\",\"reasons\":[\"...\"],\"positiveSignals\":[\"...\"],\"negativeSignals\":[\"...\"],\"suggestedRules\":[\"...\"]}.",
+            "Score 80-100 means clearly relevant, 40-79 means maybe, 0-39 means irrelevant.",
+            profile.scoringPrompt,
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            profile: {
+              name: profile.name,
+              description: profile.description,
+              rules: profile.rules.map((rule) => ({
+                type: rule.type,
+                value: rule.value,
+                weight: rule.weight,
+              })),
+              sabySources: profile.sources.map((link) => ({
+                id: link.sabySource.id,
+                name: link.sabySource.name,
+                requestName: link.sabySource.requestName,
+                description: link.sabySource.description,
+                includeKeywordsText: link.sabySource.includeKeywordsText,
+                excludeKeywordsText: link.sabySource.excludeKeywordsText,
+              })),
+              sabyQueries: profile.queries.map((link) => ({
+                id: link.sabyQuery.id,
+                sabyQueryId: link.sabyQuery.sabyQueryId,
+                name: link.sabyQuery.name,
+                parentFolderName: link.sabyQuery.parentFolderName,
+                ftsString: link.sabyQuery.ftsString,
+                ftsStringExclude: link.sabyQuery.ftsStringExclude,
+              })),
+            },
+            tender: {
+              title: tender.title,
+              description: tender.description,
+              customer: tender.customer,
+              budget: tender.budget ?? null,
+              deadline: tender.deadline,
+              placedAt: tender.placedAt ?? null,
+              number: tender.number ?? null,
+            },
+          }),
+        },
+      ],
+    });
+
+    return normalizeScoreResponse(result.text);
+  } catch (error) {
+    console.error("DeepSeek scoring failed, falling back to local rules", error);
+    return scoreTenderLocally(profile, tender);
+  }
 }
 
 async function generateAndApplyProfileRulesFromFeedback(input: {
@@ -305,6 +358,10 @@ async function requestDeepSeekProfileRules(input: {
   targetVerdict: "relevant" | "maybe" | "irrelevant";
   comment: string | null;
 }) {
+  if (!hasUsableDeepSeekKey()) {
+    return [];
+  }
+
   const result = await generateText({
     model: deepSeek(deepSeekEnv.DEEPSEEK_MODEL),
     temperature: 0,
@@ -339,6 +396,14 @@ async function requestDeepSeekProfileRules(input: {
               type: rule.type,
               value: rule.value,
               weight: rule.weight,
+            })),
+            sabyQueries: input.profile.queries.map((link) => ({
+              id: link.sabyQuery.id,
+              sabyQueryId: link.sabyQuery.sabyQueryId,
+              name: link.sabyQuery.name,
+              parentFolderName: link.sabyQuery.parentFolderName,
+              ftsString: link.sabyQuery.ftsString,
+              ftsStringExclude: link.sabyQuery.ftsStringExclude,
             })),
           },
           tender: {
@@ -402,7 +467,7 @@ async function upsertTenderProfileScore(input: {
       positiveSignals: input.score.positiveSignals,
       negativeSignals: input.score.negativeSignals,
       suggestedRules: input.score.suggestedRules,
-      model: deepSeekEnv.DEEPSEEK_MODEL,
+      model: input.score.model ?? deepSeekEnv.DEEPSEEK_MODEL,
     },
     update: {
       score: input.score.score,
@@ -411,7 +476,7 @@ async function upsertTenderProfileScore(input: {
       positiveSignals: input.score.positiveSignals,
       negativeSignals: input.score.negativeSignals,
       suggestedRules: input.score.suggestedRules,
-      model: deepSeekEnv.DEEPSEEK_MODEL,
+      model: input.score.model ?? deepSeekEnv.DEEPSEEK_MODEL,
     },
   });
 }
@@ -443,6 +508,124 @@ function normalizeScoreResponse(rawText: string): ParsedScore {
     positiveSignals: normalizeStringArray(parsed.positiveSignals),
     negativeSignals: normalizeStringArray(parsed.negativeSignals),
     suggestedRules: normalizeStringArray(parsed.suggestedRules),
+    model: deepSeekEnv.DEEPSEEK_MODEL,
+  };
+}
+
+function hasUsableDeepSeekKey() {
+  const normalizedKey = deepSeekEnv.DEEPSEEK_API_KEY.trim().toLowerCase();
+
+  return (
+    normalizedKey.length > 0 &&
+    !normalizedKey.includes("placeholder") &&
+    !normalizedKey.includes("changeme") &&
+    !normalizedKey.includes("example") &&
+    !normalizedKey.startsWith("dev-")
+  );
+}
+
+function scoreTenderLocally(
+  profile: SearchProfileWithRelations,
+  tender: Tender,
+): ParsedScore {
+  const searchableText = [
+    tender.title,
+    tender.description,
+    tender.customer,
+    tender.number,
+  ]
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
+    )
+    .join(" \n ")
+    .toLocaleLowerCase("ru-RU");
+
+  let totalScore = 50;
+  const reasons: string[] = [];
+  const positiveSignals: string[] = [];
+  const negativeSignals: string[] = [];
+  const suggestedRules: string[] = [];
+  let hardExcluded = false;
+
+  for (const rule of profile.rules) {
+    const normalizedRuleValue = rule.value.trim();
+
+    if (normalizedRuleValue.length === 0) {
+      continue;
+    }
+
+    const normalizedNeedle = normalizedRuleValue.toLocaleLowerCase("ru-RU");
+    const isMatch = searchableText.includes(normalizedNeedle);
+
+    if (rule.type === "instruction") {
+      if (suggestedRules.length < 6) {
+        suggestedRules.push(normalizedRuleValue);
+      }
+      continue;
+    }
+
+    if (!isMatch) {
+      continue;
+    }
+
+    if (rule.type === "positive") {
+      totalScore += Math.max(4, rule.weight * 6);
+      if (positiveSignals.length < 6) {
+        positiveSignals.push(normalizedRuleValue);
+      }
+      if (reasons.length < 6) {
+        reasons.push(`Совпало позитивное правило: ${normalizedRuleValue}`);
+      }
+      continue;
+    }
+
+    if (rule.type === "negative") {
+      totalScore -= Math.max(4, rule.weight * 6);
+      if (negativeSignals.length < 6) {
+        negativeSignals.push(normalizedRuleValue);
+      }
+      if (reasons.length < 6) {
+        reasons.push(`Совпало негативное правило: ${normalizedRuleValue}`);
+      }
+      continue;
+    }
+
+    hardExcluded = true;
+    totalScore = Math.min(totalScore, 10);
+    if (negativeSignals.length < 6) {
+      negativeSignals.push(normalizedRuleValue);
+    }
+    if (reasons.length < 6) {
+      reasons.push(`Сработало исключающее правило: ${normalizedRuleValue}`);
+    }
+  }
+
+  if (reasons.length === 0) {
+    reasons.push(
+      hardExcluded
+        ? "Тендер локально помечен как нерелевантный по исключающим правилам."
+        : "Локальная оценка выполнена по правилам профиля без ответа DeepSeek.",
+    );
+  }
+
+  const score = clampScore(totalScore);
+  const verdict: ParsedScore["verdict"] = hardExcluded
+    ? "irrelevant"
+    : score >= 80
+      ? "relevant"
+      : score >= 40
+        ? "maybe"
+        : "irrelevant";
+
+  return {
+    score,
+    verdict,
+    reasons,
+    positiveSignals,
+    negativeSignals,
+    suggestedRules,
+    model: LOCAL_SCORING_MODEL,
   };
 }
 

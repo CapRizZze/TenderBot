@@ -24,6 +24,11 @@ test("normalizeSabyResultToTenders parses russian aliases and attachments", () =
           Заказчик: "ООО Альфа",
           Ссылка: "https://zakupki.example/tender/243100291",
           КарточкаСсылка: "https://online.saby.ru/tender/243100291",
+          proctype_name: "Электронный аукцион",
+          proctype_brief: "ОА",
+          tpbrief: "ZakazRF (44)",
+          tradingplatformurl: "http://etp.zakazrf.ru",
+          tptypename: "44-ФЗ",
           Документы: [
             {
               Название: "spec.pdf",
@@ -43,6 +48,11 @@ test("normalizeSabyResultToTenders parses russian aliases and attachments", () =
   assert.equal(tenders[0]?.customer, "ООО Альфа");
   assert.equal(tenders[0]?.sourceUrl, "https://zakupki.example/tender/243100291");
   assert.equal(tenders[0]?.sabyUrl, "https://online.saby.ru/tender/243100291");
+  assert.equal(tenders[0]?.procurementType, "Электронный аукцион");
+  assert.equal(tenders[0]?.procurementTypeBrief, "ОА");
+  assert.equal(tenders[0]?.sourcePlatformName, "ZakazRF (44)");
+  assert.equal(tenders[0]?.sourcePlatformUrl, "http://etp.zakazrf.ru");
+  assert.equal(tenders[0]?.regulationName, "44-ФЗ");
   assert.equal(tenders[0]?.attachments.length, 1);
   assert.deepEqual(tenders[0]?.attachments[0], {
     name: "spec.pdf",

@@ -123,6 +123,11 @@ model Tender {
   sourceUrl     String?
   sabyUrl       String?
   source        TenderSource        @default(unknown)
+  procurementType String?
+  procurementTypeBrief String?
+  sourcePlatformName String?
+  sourcePlatformUrl String?
+  regulationName String?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   conversations Conversation[]
@@ -149,6 +154,7 @@ model SearchProfile {
   user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   requestNames SearchProfileRequestName[]
   sources      SearchProfileSabySource[]
+  queries      SearchProfileSabyQuery[]
   rules        SearchProfileRule[]
   scores       TenderProfileScore[]
 
@@ -173,6 +179,89 @@ model SabySource {
 
   @@index([isActive, refreshPriority])
   @@map("saby_sources")
+}
+
+model SabyFolder {
+  id          String      @id @default(cuid())
+  sabyFolderId Int        @unique
+  name        String
+  description String      @default("")
+  isActive    Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  queries     SabyQuery[]
+
+  @@index([isActive, sortOrder])
+  @@map("saby_folders")
+}
+
+model SabyQuery {
+  id               String                @id @default(cuid())
+  sabyQueryId      Int                   @unique
+  folderId         String?
+  name             String
+  parentFolderName String?
+  ftsString        String                @default("")
+  ftsStringExclude String                @default("")
+  rawConfigJson    Json?
+  isActive         Boolean               @default(true)
+  lastSyncedAt     DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  folder           SabyFolder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  profiles         SearchProfileSabyQuery[]
+  refreshRuns      SabyQueryRefreshRun[]
+
+  @@index([folderId])
+  @@index([isActive, updatedAt])
+  @@map("saby_queries")
+}
+
+model SearchProfileSabyQuery {
+  id              String        @id @default(cuid())
+  searchProfileId String
+  sabyQueryId     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  searchProfile   SearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+  sabyQuery       SabyQuery     @relation(fields: [sabyQueryId], references: [id], onDelete: Cascade)
+
+  @@unique([searchProfileId, sabyQueryId])
+  @@index([sabyQueryId])
+  @@index([searchProfileId])
+  @@map("search_profile_saby_queries")
+}
+
+model SabyStructureSyncRun {
+  id           String   @id @default(cuid())
+  status       String
+  startedAt    DateTime
+  finishedAt   DateTime?
+  foldersCount Int      @default(0)
+  queriesCount Int      @default(0)
+  error        String?
+  metaJson     Json?
+
+  @@index([startedAt])
+  @@index([status, startedAt])
+  @@map("saby_structure_sync_runs")
+}
+
+model SabyQueryRefreshRun {
+  id          String    @id @default(cuid())
+  sabyQueryId String
+  status      String
+  startedAt   DateTime
+  finishedAt  DateTime?
+  tendersCount Int      @default(0)
+  error       String?
+  metaJson    Json?
+  query       SabyQuery @relation(fields: [sabyQueryId], references: [id], onDelete: Cascade)
+
+  @@index([sabyQueryId, startedAt])
+  @@index([status, startedAt])
+  @@map("saby_query_refresh_runs")
 }
 
 model SearchProfileSabySource {

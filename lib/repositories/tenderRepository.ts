@@ -25,6 +25,7 @@ export async function upsertTenderFromParserDto(
 ): Promise<PrismaTender> {
   const sourceUrl = normalizeSourceUrl(tender);
   const sabyUrl = normalizeSabyUrl(tender);
+  const source = inferTenderSource(tender, sourceUrl, sabyUrl);
   const tenderData: Prisma.TenderUncheckedCreateInput = {
     externalId: tender.id,
     number: tender.number,
@@ -40,7 +41,12 @@ export async function upsertTenderFromParserDto(
     url: tender.url,
     sourceUrl,
     sabyUrl,
-    source: "unknown",
+    source,
+    procurementType: tender.procurementType,
+    procurementTypeBrief: tender.procurementTypeBrief,
+    sourcePlatformName: tender.sourcePlatformName,
+    sourcePlatformUrl: tender.sourcePlatformUrl,
+    regulationName: tender.regulationName,
   };
 
   return prisma.$transaction(async (transaction) => {
@@ -63,6 +69,12 @@ export async function upsertTenderFromParserDto(
         url: tender.url,
         sourceUrl,
         sabyUrl,
+        source,
+        procurementType: tender.procurementType ?? null,
+        procurementTypeBrief: tender.procurementTypeBrief ?? null,
+        sourcePlatformName: tender.sourcePlatformName ?? null,
+        sourcePlatformUrl: tender.sourcePlatformUrl ?? null,
+        regulationName: tender.regulationName ?? null,
       },
     });
 
@@ -127,7 +139,7 @@ export async function upsertTenderFromParserDto(
 export async function findCachedTendersByKeyword(
   userId: string,
   keyword: string,
-  take = 50,
+  take = 10,
   searchProfileId?: string,
 ): Promise<Tender[]> {
   const normalizedKeyword = keyword.trim();
@@ -441,6 +453,17 @@ function mapPrismaTenderToParserDto(tender: PrismaTenderWithRelations): Tender {
     ...(tender.sourceUrl ? { sourceUrl: tender.sourceUrl } : {}),
     ...(tender.sabyUrl ? { sabyUrl: tender.sabyUrl } : {}),
     source: tender.source,
+    ...(tender.procurementType ? { procurementType: tender.procurementType } : {}),
+    ...(tender.procurementTypeBrief
+      ? { procurementTypeBrief: tender.procurementTypeBrief }
+      : {}),
+    ...(tender.sourcePlatformName
+      ? { sourcePlatformName: tender.sourcePlatformName }
+      : {}),
+    ...(tender.sourcePlatformUrl
+      ? { sourcePlatformUrl: tender.sourcePlatformUrl }
+      : {}),
+    ...(tender.regulationName ? { regulationName: tender.regulationName } : {}),
     ...(tender.profileScores?.[0]
       ? {
           profileScore: {
@@ -493,7 +516,17 @@ function normalizeJsonStringArray(value: Prisma.JsonValue): string[] {
     return [];
   }
 
-  return value.filter((item): item is string => typeof item === "string");
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .filter((item) => !looksLikeBrokenPlaceholderText(item));
+}
+
+function looksLikeBrokenPlaceholderText(value: string) {
+  const questionMarks = [...value].filter((char) => char === "?").length;
+
+  return questionMarks >= 8 && questionMarks / value.length > 0.2;
 }
 
 function normalizeSourceUrl(tender: Tender): string | null {
@@ -506,6 +539,107 @@ function normalizeSourceUrl(tender: Tender): string | null {
   }
 
   return null;
+}
+
+function inferTenderSource(
+  tender: Tender,
+  sourceUrl: string | null,
+  sabyUrl: string | null,
+): "government" | "commercial" | "unknown" {
+  if (tender.source && tender.source !== "unknown") {
+    return tender.source;
+  }
+
+  const combinedText = [
+    tender.title,
+    tender.description,
+    tender.customer,
+    tender.number,
+    sourceUrl,
+    sabyUrl,
+    tender.url,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" \n ")
+    .toLocaleLowerCase("ru-RU");
+
+  if (
+    GOVERNMENT_SOURCE_MARKERS.some((marker) =>
+      matchesSourceMarker(combinedText, marker),
+    )
+  ) {
+    return "government";
+  }
+
+  if (
+    COMMERCIAL_SOURCE_MARKERS.some((marker) =>
+      matchesSourceMarker(combinedText, marker),
+    )
+  ) {
+    return "commercial";
+  }
+
+  return "unknown";
+}
+
+const GOVERNMENT_SOURCE_MARKERS = [
+  "44-фз",
+  "44 фз",
+  "223-фз",
+  "223 фз",
+  "государствен",
+  "госзаказ",
+  "госзакуп",
+  "муницип",
+  "федеральн",
+  "бюджетн",
+  "казенн",
+  "администрац",
+  "минздрав",
+  "минобр",
+  "минцифр",
+  "минфин",
+  "минкульт",
+  "минспорт",
+  "гку",
+  "фгбу",
+  "мку",
+  "гауз",
+  "обуз",
+  "гбуз",
+  "госуслуг",
+  "zakazrf",
+  "гис",
+  "гу",
+  "фмба",
+];
+
+const COMMERCIAL_SOURCE_MARKERS = [
+  "коммерчес",
+  "коммерч.",
+  "b2b",
+  "фабрикант",
+  "росэлторг",
+  "тендерпро",
+  "ооо",
+  "ао",
+  "пао",
+  "зао",
+  "ип",
+];
+
+function matchesSourceMarker(text: string, marker: string) {
+  if (marker.length >= 5) {
+    return text.includes(marker);
+  }
+
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(marker)}([^\\p{L}\\p{N}]|$)`, "iu").test(
+    text,
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeSabyUrl(tender: Tender): string | null {

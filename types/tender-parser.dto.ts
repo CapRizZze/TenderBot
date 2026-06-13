@@ -14,13 +14,24 @@ export const tenderParserDtoSchema = z.object({
   title: z.string().min(1, "Название тендера обязательно"),
   description: z.string().min(1, "Описание тендера обязательно"),
   customer: z.string().min(1, "Заказчик обязателен"),
-  placedAt: z.string().datetime("Дата размещения должна быть в формате ISO").optional(),
+  placedAt: z
+    .string()
+    .datetime("Дата размещения должна быть в формате ISO")
+    .optional(),
   deadline: z.string().datetime("Срок подачи должен быть в формате ISO"),
-  budget: z.number().positive("Цена контракта должна быть положительным числом").optional(),
+  budget: z
+    .number()
+    .positive("Цена контракта должна быть положительным числом")
+    .optional(),
   url: z.string().url("Ссылка на тендер должна быть валидным URL"),
   sourceUrl: z.string().url().optional(),
   sabyUrl: z.string().url().optional(),
   source: z.enum(["government", "commercial", "unknown"]).optional(),
+  procurementType: z.string().min(1).optional(),
+  procurementTypeBrief: z.string().min(1).optional(),
+  sourcePlatformName: z.string().min(1).optional(),
+  sourcePlatformUrl: z.string().url().optional(),
+  regulationName: z.string().min(1).optional(),
   profileScore: z
     .object({
       score: z.number().int().min(0).max(100),
@@ -49,11 +60,22 @@ export const tenderKeywordsSchema = z
   .min(1, "Нужно передать хотя бы один RequestName");
 
 export const tendersRequestSchema = z.object({
-  keywords: tenderKeywordsSchema,
+  keywords: tenderKeywordsSchema.optional().default([]),
+  queryId: z.number().int().optional(),
+}).superRefine((value, context) => {
+  if (value.keywords.length === 0 && !value.queryId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Нужно передать хотя бы один RequestName или queryId",
+      path: ["keywords"],
+    });
+  }
 });
 
 export type Tender = z.infer<typeof tenderParserDtoSchema>;
 export type TenderAttachment = z.infer<typeof tenderAttachmentDtoSchema>;
 export type TenderParserResponseDto = z.infer<typeof tenderParserResponseSchema>;
 export type TendersRequestDto = z.infer<typeof tendersRequestSchema>;
-export type SabyDailyLimitStatistics = z.infer<typeof sabyDailyLimitStatisticsSchema>;
+export type SabyDailyLimitStatistics = z.infer<
+  typeof sabyDailyLimitStatisticsSchema
+>;

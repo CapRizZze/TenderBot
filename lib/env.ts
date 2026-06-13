@@ -38,6 +38,7 @@ const deepSeekEnvSchema = z.object({
 const parserEnvSchema = z
   .object({
     TENDER_PARSER_MODE: z.enum(["mock", "rest", "saby"]).default("mock"),
+    SABY_INTEGRATION_MODE: z.enum(["legacy", "rpc"]).default("legacy"),
     TENDER_PARSER_API_URL: z.string().url().optional(),
     SABY_AUTH_URL: z.string().url().optional(),
     SABY_TENDER_API_URL: z.string().url().optional(),
@@ -122,6 +123,7 @@ export function getDeepSeekEnv() {
 export function getParserEnv() {
   return parserEnvSchema.parse({
     TENDER_PARSER_MODE: process.env.TENDER_PARSER_MODE,
+    SABY_INTEGRATION_MODE: process.env.SABY_INTEGRATION_MODE,
     TENDER_PARSER_API_URL: process.env.TENDER_PARSER_API_URL,
     SABY_AUTH_URL: process.env.SABY_AUTH_URL,
     SABY_TENDER_API_URL: process.env.SABY_TENDER_API_URL,

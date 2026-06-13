@@ -3,26 +3,21 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { getParserEnv } from "@/lib/env";
+import { prisma } from "@/lib/prisma";
 import {
   findCachedTenderByExternalId,
   findCachedTendersByKeyword,
 } from "@/lib/repositories/tenderRepository";
+import { buildSabyQueryCacheKey } from "@/lib/saby-query";
 import { findRecentSabyApiCallLogs } from "@/lib/services/sabyApiCallLogService";
-import {
-  findActiveSabySources,
-  getConfiguredSabyRequestNames,
-  syncConfiguredSabySources,
-} from "@/lib/services/sabySourceService";
 import {
   findActiveSearchProfile,
   getOrCreateSearchProfiles,
   mapSearchProfileToDto,
 } from "@/lib/services/searchProfileService";
-import { userKeywordService } from "@/lib/services/userKeywordService";
 import { fetchTenderParserDailyLimitStatistics } from "@/lib/tender-parser/tenderParserService";
-import type { KeywordDto } from "@/types/keyword.dto";
 import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
-import type { SabySourceDto } from "@/types/saby-source.dto";
+import type { SabyQueryDto } from "@/types/saby-query.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type { SabyDailyLimitStatistics, Tender } from "@/types/tender-parser.dto";
 
@@ -30,6 +25,7 @@ interface HomePageProps {
   searchParams?: {
     tenderId?: string;
     requestName?: string;
+    queryId?: string;
     profileId?: string;
   };
 }
@@ -46,28 +42,49 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   const parserEnv = getParserEnv();
-  const envRequestNames = getConfiguredSabyRequestNames();
-  let initialKeywords: KeywordDto[] = [];
+  const isRpcMode =
+    parserEnv.TENDER_PARSER_MODE === "saby" &&
+    parserEnv.SABY_INTEGRATION_MODE === "rpc";
   let searchProfiles: SearchProfileDto[] = [];
-  let availableSources: SabySourceDto[] = [];
+  let availableQueries: SabyQueryDto[] = [];
 
   try {
-    initialKeywords = await userKeywordService.getOrCreateUserKeywords(session.user.id);
-  } catch (error) {
-    console.error("Failed to load user keywords", error);
-  }
-
-  try {
-    await syncConfiguredSabySources(envRequestNames);
-    availableSources = await findActiveSabySources();
-  } catch (error) {
-    console.error("Failed to load Saby sources", error);
-  }
-
-  try {
-    searchProfiles = await getOrCreateSearchProfiles(session.user.id, envRequestNames);
+    searchProfiles = await getOrCreateSearchProfiles(session.user.id);
   } catch (error) {
     console.error("Failed to load search profiles", error);
+  }
+
+  if (isRpcMode) {
+    try {
+      const queries = await prisma.sabyQuery.findMany({
+        where: {
+          isActive: true,
+        },
+        include: {
+          folder: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: [{ name: "asc" }],
+      });
+
+      availableQueries = queries.map((query) => ({
+        id: query.id,
+        sabyQueryId: query.sabyQueryId,
+        folderId: query.folderId,
+        folderName: query.folder?.name ?? null,
+        name: query.name,
+        parentFolderName: query.parentFolderName,
+        ftsString: query.ftsString,
+        ftsStringExclude: query.ftsStringExclude,
+        isActive: query.isActive,
+        lastSyncedAt: query.lastSyncedAt?.toISOString(),
+      }));
+    } catch (error) {
+      console.error("Failed to load Saby queries", error);
+    }
   }
 
   const activeSearchProfileRecord = await findActiveSearchProfile(
@@ -78,18 +95,29 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     ? mapSearchProfileToDto(activeSearchProfileRecord)
     : searchProfiles[0];
 
-  const requestNames =
-    activeSearchProfile?.requestNames.length
-      ? activeSearchProfile.requestNames
-      : initialKeywords.length > 0
-        ? initialKeywords.map((keyword) => keyword.value)
-        : envRequestNames;
-  const defaultRequestName = requestNames[0] ?? "разработка";
+  const requestedQueryId = searchParams?.queryId?.trim();
+  const activeQuery =
+    isRpcMode && activeSearchProfile?.queries.length
+      ? requestedQueryId
+        ? activeSearchProfile.queries.find((query) => query.id === requestedQueryId) ??
+          activeSearchProfile.queries[0]
+        : activeSearchProfile.queries[0]
+      : null;
+
+  const defaultRequestName =
+    activeQuery?.name ??
+    activeSearchProfile?.queries[0]?.name ??
+    availableQueries[0]?.name ??
+    "разработка";
   const requestedRequestName = searchParams?.requestName?.trim();
-  const activeRequestName =
-    requestedRequestName && requestNames.includes(requestedRequestName)
+  const activeRequestName = activeQuery
+    ? activeQuery.name
+    : requestedRequestName
       ? requestedRequestName
       : defaultRequestName;
+  const activeCacheKey = activeQuery
+    ? buildSabyQueryCacheKey(activeQuery.id)
+    : activeRequestName;
 
   let tenders: Tender[] = [];
   let tendersLoadError: string | null = null;
@@ -109,8 +137,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   try {
     tenders = await findCachedTendersByKeyword(
       session.user.id,
-      activeRequestName,
-      50,
+      activeCacheKey,
+      10,
       activeSearchProfile?.id,
     );
   } catch (error) {
@@ -120,7 +148,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   if (parserEnv.TENDER_PARSER_MODE === "saby") {
     if (tenders.length === 0) {
       tendersLoadError =
-        "В локальном кэше пока нет тендеров по этому RequestName. Для тестов используйте кнопку «Обновить из Saby вручную», чтобы не тратить лимит на автоматические перерисовки страницы.";
+        "В локальном кэше пока нет тендеров по этому запросу. Для тестов используйте кнопку «Обновить из Saby вручную», чтобы не тратить лимит на автоматические перерисовки страницы.";
     } else if (hasLegacySabyCache(tenders)) {
       tendersLoadError =
         "Показаны сохранённые тендеры из локального кэша. Среди них есть старые записи без корректного номера. Обновляйте вручную только при необходимости.";
@@ -156,14 +184,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   return (
     <AppShell
+      activeQueryId={activeQuery?.id}
       activeTender={activeTender ?? undefined}
       activeTenderId={searchParams?.tenderId}
       activeRequestName={activeRequestName}
       activeSearchProfile={activeSearchProfile}
-      availableSources={availableSources}
-      initialKeywords={initialKeywords}
+      availableQueries={availableQueries}
+      canSyncSabyStructure={isRpcMode}
       recentSabyApiCalls={recentSabyApiCalls}
-      requestNames={requestNames}
       sabyDailyLimitStatistics={sabyDailyLimitStatistics}
       searchProfiles={searchProfiles}
       tendersLoadError={tendersLoadError}

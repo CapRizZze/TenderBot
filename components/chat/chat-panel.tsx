@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useChat } from "ai/react";
 import type { FormEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -59,18 +59,31 @@ const currencyFormatter = new Intl.NumberFormat("ru-RU", {
 const TENDER_CONTEXT_COLLAPSED_STORAGE_KEY = "tenderbot:tender-context-collapsed";
 
 function getDisplayTenderSourceUrl(tender: Tender): string {
-  return tender.sourceUrl ?? tender.url;
+  return tender.sourcePlatformUrl ?? tender.sourceUrl ?? tender.url;
 }
 
-function getProcurementTypeLabel(source?: Tender["source"]) {
-  switch (source) {
-    case "government":
-      return "Государственная";
-    case "commercial":
-      return "Коммерческая";
-    default:
-      return "Не указан";
+function getProcurementTypeLabel(tender: Tender) {
+  return tender.procurementType ?? "Не указан";
+}
+
+function getSourcePlatformLabel(tender: Tender) {
+  return tender.sourcePlatformName ?? "Не указан";
+}
+
+function getRegulationBadgeLabel(tender: Tender) {
+  if (!tender.regulationName) {
+    return null;
   }
+
+  if (tender.regulationName.includes("44")) {
+    return "44-ФЗ";
+  }
+
+  if (tender.regulationName.includes("223")) {
+    return "223-ФЗ";
+  }
+
+  return tender.regulationName;
 }
 
 function getFileExtension(fileName: string) {
@@ -146,6 +159,7 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
   const [isFeedbackApplying, setIsFeedbackApplying] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const previousTenderIdRef = useRef<string | undefined>(undefined);
+  const autoFetchedDocumentsTenderIdRef = useRef<string | undefined>(undefined);
 
   const {
     conversationId,
@@ -239,6 +253,7 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
     setFeedbackMessage(null);
     setIsFeedbackSaving(false);
     setIsFeedbackApplying(false);
+    autoFetchedDocumentsTenderIdRef.current = undefined;
     setMessages([]);
   }, [setMessages, tender]);
 
@@ -257,6 +272,83 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
     );
   }, [historyMessages, setMessages, tender]);
 
+  const fetchTenderDocumentsFromApi = useCallback(
+    async (): Promise<TenderAttachment[]> => {
+      if (!tender) {
+        return [];
+      }
+
+      const response = await fetch(
+        `/api/tenders/${encodeURIComponent(tender.id)}/documents`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await getErrorMessageFromResponse(
+            response,
+            "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РґРѕРєСѓРјРµРЅС‚С‹ С‚РµРЅРґРµСЂР° РёР· Saby",
+          ),
+        );
+      }
+
+      const data = (await response.json()) as TenderDocumentsResponse;
+      const nextDocuments = Array.isArray(data.documents) ? data.documents : [];
+
+      setDocuments(nextDocuments);
+      setSelectedDocumentUrls((currentUrls) =>
+        currentUrls.filter((url) =>
+          nextDocuments.some((attachment) => attachment.url === url),
+        ),
+      );
+
+      return nextDocuments;
+    },
+    [tender],
+  );
+
+  useEffect(() => {
+    if (
+      !tender ||
+      tender.attachments.length > 0 ||
+      isDocumentsLoading ||
+      autoFetchedDocumentsTenderIdRef.current === tender.id
+    ) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    autoFetchedDocumentsTenderIdRef.current = tender.id;
+    setIsDocumentsLoading(true);
+    setDocumentsErrorMessage(null);
+
+    void fetchTenderDocumentsFromApi()
+      .catch((documentsError) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setDocumentsErrorMessage(
+          documentsError instanceof Error
+            ? documentsError.message
+            : "Не удалось получить документы тендера из Saby",
+        );
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsDocumentsLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [fetchTenderDocumentsFromApi, isDocumentsLoading, tender]);
+
   function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     if (!effectiveTender) {
       return;
@@ -272,32 +364,40 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
     });
   }
 
-  async function fetchTenderDocumentsFromApi(): Promise<TenderAttachment[]> {
-    if (!tender) {
-      return [];
-    }
+  /* const fetchTenderDocumentsFromApi = useCallback(async (): Promise<TenderAttachment[]> => {
+      if (!tender) {
+        return [];
+      }
 
-    const response = await fetch(`/api/tenders/${encodeURIComponent(tender.id)}/documents`, {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        await getErrorMessageFromResponse(response, "Не удалось получить документы тендера из Saby"),
+      const response = await fetch(
+        `/api/tenders/${encodeURIComponent(tender.id)}/documents`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
       );
-    }
 
-    const data = (await response.json()) as TenderDocumentsResponse;
-    const nextDocuments = Array.isArray(data.documents) ? data.documents : [];
+      if (!response.ok) {
+        throw new Error(
+          await getErrorMessageFromResponse(
+            response,
+            "Не удалось получить документы тендера из Saby",
+          ),
+        );
+      }
 
-    setDocuments(nextDocuments);
-    setSelectedDocumentUrls((currentUrls) =>
-      currentUrls.filter((url) => nextDocuments.some((attachment) => attachment.url === url)),
-    );
+      const data = (await response.json()) as TenderDocumentsResponse;
+      const nextDocuments = Array.isArray(data.documents) ? data.documents : [];
 
-    return nextDocuments;
-  }
+      setDocuments(nextDocuments);
+      setSelectedDocumentUrls((currentUrls) =>
+        currentUrls.filter((url) =>
+          nextDocuments.some((attachment) => attachment.url === url),
+        ),
+      );
+
+      return nextDocuments;
+  }, [tender]); */
 
   function toggleAttachmentSelection(url: string) {
     setSelectedDocumentUrls((currentUrls) =>
@@ -440,7 +540,7 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
   }
 
   return (
-    <section className="flex h-full flex-1 flex-col bg-background">
+    <section className="flex h-full min-w-0 flex-1 flex-col bg-background">
       <header className="border-b px-4 py-3">
         <div className="mx-auto flex max-w-6xl flex-col gap-3">
           {tender ? (
@@ -448,9 +548,16 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] text-muted-foreground">Диалог по тендеру</p>
-                  <h2 className="mt-1 text-lg font-semibold leading-tight text-balance">
-                    {tender.title}
-                  </h2>
+                  <div className="mt-1 flex items-start justify-between gap-3">
+                    <h2 className="min-w-0 flex-1 text-lg font-semibold leading-tight text-balance">
+                      {tender.title}
+                    </h2>
+                    {getRegulationBadgeLabel(tender) ? (
+                      <span className="shrink-0 rounded-md border bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                        {getRegulationBadgeLabel(tender)}
+                      </span>
+                    ) : null}
+                  </div>
                   {!isTenderContextCollapsed ? (
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground text-pretty">
                       {tender.description}
@@ -506,7 +613,7 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
                           Тип закупки
                         </div>
                         <div className="mt-1 font-medium leading-5">
-                          {getProcurementTypeLabel(tender.source)}
+                          {getProcurementTypeLabel(tender)}
                         </div>
                       </div>
                       <div className="rounded-md border bg-card px-3 py-2">
@@ -627,8 +734,13 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
                       target="_blank"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
-                      <span>Источник тендера</span>
+                      <span>Источник</span>
                     </a>
+                    {tender.sourcePlatformName ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-muted-foreground">
+                        <span>{getSourcePlatformLabel(tender)}</span>
+                      </span>
+                    ) : null}
                     {documents.length > 0 ? (
                       <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-muted-foreground">
                         <Paperclip className="h-3.5 w-3.5" />
@@ -726,6 +838,12 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
                       </>
                     ) : null}
                   </div>
+
+                  {isDocumentsLoading ? (
+                    <p className="text-center text-xs text-muted-foreground">
+                      Загружаю вложения тендера из Saby...
+                    </p>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -734,7 +852,7 @@ export function ChatPanel({ tender, activeSearchProfile }: ChatPanelProps) {
               <p className="text-[11px] text-muted-foreground">Тендер не выбран</p>
               <h2 className="mt-1 text-lg font-semibold leading-tight">Выберите тендер</h2>
               <p className="mt-1 text-sm text-muted-foreground text-pretty">
-                Выберите RequestName слева, при необходимости обновите данные из Saby, затем
+                Выберите запрос слева, при необходимости обновите данные из Saby, затем
                 откройте нужный тендер.
               </p>
             </div>

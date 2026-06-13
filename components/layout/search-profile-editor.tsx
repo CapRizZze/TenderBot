@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { SabySourceDto } from "@/types/saby-source.dto";
+import type { SabyQueryDto } from "@/types/saby-query.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import { getErrorMessageFromResponse } from "@/utils/api-client";
 
 interface SearchProfileEditorProps {
   profile?: SearchProfileDto;
-  availableSources: SabySourceDto[];
+  availableQueries: SabyQueryDto[];
 }
 
 type RuleBuckets = {
@@ -18,6 +18,11 @@ type RuleBuckets = {
   hardExclude: string;
   instruction: string;
 };
+
+interface QueryGroup {
+  title: string;
+  queries: SabyQueryDto[];
+}
 
 function toRuleBuckets(profile?: SearchProfileDto): RuleBuckets {
   const byType = {
@@ -51,16 +56,47 @@ function splitLines(value: string) {
     .filter(Boolean);
 }
 
+function groupQueriesByFolder(queries: SabyQueryDto[]): QueryGroup[] {
+  const grouped = new Map<string, SabyQueryDto[]>();
+
+  for (const query of queries) {
+    const groupTitle =
+      query.folderName?.trim() ||
+      query.parentFolderName?.trim() ||
+      "Без папки";
+    const items = grouped.get(groupTitle) ?? [];
+    items.push(query);
+    grouped.set(groupTitle, items);
+  }
+
+  return [...grouped.entries()]
+    .map(([title, items]) => ({
+      title,
+      queries: [...items].sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    }))
+    .sort((left, right) => {
+      if (left.title === "Без папки") {
+        return 1;
+      }
+
+      if (right.title === "Без папки") {
+        return -1;
+      }
+
+      return left.title.localeCompare(right.title, "ru");
+    });
+}
+
 export function SearchProfileEditor({
   profile,
-  availableSources,
+  availableQueries,
 }: SearchProfileEditorProps) {
   const router = useRouter();
   const [name, setName] = useState(profile?.name ?? "");
   const [description, setDescription] = useState(profile?.description ?? "");
   const [scoringPrompt, setScoringPrompt] = useState(profile?.scoringPrompt ?? "");
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>(
-    profile?.sources.map((source) => source.id) ?? [],
+  const [selectedQueryIds, setSelectedQueryIds] = useState<string[]>(
+    profile?.queries.map((query) => query.id) ?? [],
   );
   const [ruleBuckets, setRuleBuckets] = useState<RuleBuckets>(() =>
     toRuleBuckets(profile),
@@ -73,20 +109,24 @@ export function SearchProfileEditor({
     setName(profile?.name ?? "");
     setDescription(profile?.description ?? "");
     setScoringPrompt(profile?.scoringPrompt ?? "");
-    setSelectedSourceIds(profile?.sources.map((source) => source.id) ?? []);
+    setSelectedQueryIds(profile?.queries.map((query) => query.id) ?? []);
     setRuleBuckets(toRuleBuckets(profile));
     setMessage(null);
     setErrorMessage(null);
   }, [profile]);
 
   const hasProfile = Boolean(profile);
-  const sourceIdSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
+  const queryIdSet = useMemo(() => new Set(selectedQueryIds), [selectedQueryIds]);
+  const queryGroups = useMemo(
+    () => groupQueriesByFolder(availableQueries),
+    [availableQueries],
+  );
 
-  function toggleSource(sourceId: string) {
-    setSelectedSourceIds((current) =>
-      current.includes(sourceId)
-        ? current.filter((value) => value !== sourceId)
-        : [...current, sourceId],
+  function toggleQuery(queryId: string) {
+    setSelectedQueryIds((current) =>
+      current.includes(queryId)
+        ? current.filter((value) => value !== queryId)
+        : [...current, queryId],
     );
   }
 
@@ -109,7 +149,7 @@ export function SearchProfileEditor({
           name,
           description,
           scoringPrompt,
-          sourceIds: selectedSourceIds,
+          queryIds: selectedQueryIds,
           rules: {
             positive: splitLines(ruleBuckets.positive),
             negative: splitLines(ruleBuckets.negative),
@@ -147,45 +187,69 @@ export function SearchProfileEditor({
         </p>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1.5">
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-medium text-muted-foreground">
+          Название профиля
+        </label>
+        <input
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          disabled={!hasProfile || isSaving}
+          onChange={(event) => setName(event.target.value)}
+          value={name}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
           <label className="text-[11px] font-medium text-muted-foreground">
-            Название профиля
+            Запросы Saby
           </label>
-          <input
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-            disabled={!hasProfile || isSaving}
-            onChange={(event) => setName(event.target.value)}
-            value={name}
-          />
+          <span className="text-[11px] text-muted-foreground">
+            Выбрано: {selectedQueryIds.length}
+          </span>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-muted-foreground">
-            Привязанные источники Saby
-          </label>
-          <div className="flex flex-wrap gap-2 rounded-md border bg-background p-3">
-            {availableSources.map((source) => {
-              const isActive = sourceIdSet.has(source.id);
+        <div className="max-h-64 space-y-3 overflow-y-auto rounded-md border bg-background p-3">
+          {availableQueries.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Сначала выполните синхронизацию структуры Saby, затем здесь
+              появятся папки и запросы.
+            </p>
+          ) : null}
 
-              return (
-                <button
-                  className={[
-                    "rounded-md border px-2.5 py-1 text-xs transition-colors",
-                    isActive
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                  ].join(" ")}
-                  disabled={!hasProfile || isSaving}
-                  key={source.id}
-                  onClick={() => toggleSource(source.id)}
-                  type="button"
-                >
-                  {source.name}
-                </button>
-              );
-            })}
-          </div>
+          {queryGroups.map((group) => (
+            <div
+              className="rounded-md border bg-muted/20 p-2.5"
+              key={group.title}
+            >
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {group.queries.map((query) => {
+                  const isActive = queryIdSet.has(query.id);
+
+                  return (
+                    <button
+                      className={[
+                        "rounded-md border px-2.5 py-1 text-xs transition-colors",
+                        isActive
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      ].join(" ")}
+                      disabled={!hasProfile || isSaving}
+                      key={query.id}
+                      onClick={() => toggleQuery(query.id)}
+                      title={`${group.title} / ${query.name}`}
+                      type="button"
+                    >
+                      {query.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

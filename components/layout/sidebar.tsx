@@ -11,13 +11,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { ConversationList } from "@/components/layout/conversation-list";
-import { KeywordEditor } from "@/components/layout/keyword-editor";
 import { RefreshTendersButton } from "@/components/layout/refresh-tenders-button";
 import { SearchProfileEditor } from "@/components/layout/search-profile-editor";
 import { SignOutButton } from "@/components/layout/sign-out-button";
-import type { KeywordDto } from "@/types/keyword.dto";
+import { formatSabyQueryLabel } from "@/lib/saby-query";
 import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
-import type { SabySourceDto } from "@/types/saby-source.dto";
+import type { SabyQueryDto } from "@/types/saby-query.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type {
   SabyDailyLimitStatistics,
@@ -27,15 +26,26 @@ import type {
 interface SidebarProps {
   tenders: Tender[];
   activeRequestName: string;
+  activeQueryId?: string;
   activeSearchProfile?: SearchProfileDto;
-  requestNames: string[];
-  availableSources: SabySourceDto[];
+  availableQueries: SabyQueryDto[];
+  canSyncSabyStructure: boolean;
   searchProfiles: SearchProfileDto[];
-  initialKeywords: KeywordDto[];
   recentSabyApiCalls: SabyApiCallLogEntry[];
   sabyDailyLimitStatistics?: SabyDailyLimitStatistics | null;
   tendersLoadError?: string | null;
   activeTenderId?: string;
+}
+
+interface NavigationItem {
+  queryId?: string;
+  requestName: string;
+  title?: string;
+}
+
+interface NavigationGroup {
+  title: string;
+  items: NavigationItem[];
 }
 
 const currencyFormatter = new Intl.NumberFormat("ru-RU", {
@@ -58,6 +68,7 @@ const logTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
 });
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "tenderbot:sidebar-collapsed";
+const SYNC_MESSAGE_AUTOHIDE_MS = 6000;
 
 function shouldDisplayLogEntry(entry: SabyApiCallLogEntry) {
   return entry.operation === "refresh_tenders";
@@ -90,21 +101,6 @@ function formatScoreVerdict(verdict: string) {
       return "Скрыт";
     default:
       return verdict;
-  }
-}
-
-function formatVerdictFilterLabel(
-  verdict: "all" | "relevant" | "maybe" | "irrelevant",
-) {
-  switch (verdict) {
-    case "relevant":
-      return "Релевантные";
-    case "maybe":
-      return "Под вопросом";
-    case "irrelevant":
-      return "Скрытые";
-    default:
-      return "Все";
   }
 }
 
@@ -160,14 +156,37 @@ function formatVerdictFilterDisplayLabel(
   }
 }
 
+function getRegulationBadgeLabel(tender: Tender) {
+  if (!tender.regulationName) {
+    return null;
+  }
+
+  if (tender.regulationName.includes("44")) {
+    return "44-ФЗ";
+  }
+
+  if (tender.regulationName.includes("223")) {
+    return "223-ФЗ";
+  }
+
+  return tender.regulationName;
+}
+
+function compactListLabel(value: string) {
+  return value.replace(
+    /международн(?:ый|ая|ое|ые|ых|ым|ого|ой)?/giu,
+    "ино",
+  );
+}
+
 export function Sidebar({
   tenders,
   activeRequestName,
+  activeQueryId,
   activeSearchProfile,
-  requestNames,
-  availableSources,
+  availableQueries,
+  canSyncSabyStructure,
   searchProfiles,
-  initialKeywords,
   recentSabyApiCalls,
   sabyDailyLimitStatistics,
   tendersLoadError,
@@ -176,6 +195,9 @@ export function Sidebar({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const [isSyncingQueries, setIsSyncingQueries] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [isSyncError, setIsSyncError] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [verdictFilter, setVerdictFilter] = useState<
@@ -192,6 +214,51 @@ export function Sidebar({
   const visibleSabyApiCalls = recentSabyApiCalls
     .filter(shouldDisplayLogEntry)
     .slice(0, 12);
+  const activeQuery =
+    activeSearchProfile?.queries.find((query) => query.id === activeQueryId) ??
+    activeSearchProfile?.queries.find((query) => query.name === activeRequestName) ??
+    null;
+
+  const navigationGroups = useMemo<NavigationGroup[]>(() => {
+    if (!activeSearchProfile?.queries.length) {
+      return [];
+    }
+
+    const grouped = new Map<string, NavigationItem[]>();
+
+    for (const query of activeSearchProfile.queries) {
+      const groupTitle =
+        query.folderName?.trim() ||
+        query.parentFolderName?.trim() ||
+        "Без папки";
+      const items = grouped.get(groupTitle) ?? [];
+      items.push({
+        queryId: query.id,
+        requestName: query.name,
+        title: formatSabyQueryLabel(query),
+      });
+      grouped.set(groupTitle, items);
+    }
+
+    return [...grouped.entries()]
+      .map(([title, items]) => ({
+        title,
+        items: [...items].sort((left, right) =>
+          left.requestName.localeCompare(right.requestName, "ru"),
+        ),
+      }))
+      .sort((left, right) => {
+        if (left.title === "Без папки") {
+          return 1;
+        }
+
+        if (right.title === "Без папки") {
+          return -1;
+        }
+
+        return left.title.localeCompare(right.title, "ru");
+      });
+  }, [activeSearchProfile?.queries]);
 
   const visibleTenders = useMemo(() => {
     const filtered = tenders.filter((tender) => {
@@ -276,10 +343,7 @@ export function Sidebar({
         viewportPadding,
         window.innerWidth - menuWidth - viewportPadding,
       );
-      const left = Math.min(
-        Math.max(buttonRect.left, viewportPadding),
-        maxLeft,
-      );
+      const left = Math.min(Math.max(buttonRect.left, viewportPadding), maxLeft);
       const maxTop = Math.max(
         viewportPadding,
         window.innerHeight - menuHeight - viewportPadding,
@@ -301,10 +365,29 @@ export function Sidebar({
     };
   }, [isSettingsOpen]);
 
+  useEffect(() => {
+    if (!syncMessage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSyncMessage(null);
+      setIsSyncError(false);
+    }, SYNC_MESSAGE_AUTOHIDE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [syncMessage]);
+
   function openTender(tenderId: string) {
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("tenderId", tenderId);
     nextParams.set("requestName", activeRequestName);
+
+    if (activeQueryId) {
+      nextParams.set("queryId", activeQueryId);
+    } else {
+      nextParams.delete("queryId");
+    }
 
     if (activeSearchProfile) {
       nextParams.set("profileId", activeSearchProfile.id);
@@ -315,9 +398,16 @@ export function Sidebar({
     });
   }
 
-  function changeRequestName(requestName: string) {
+  function changeNavigationTarget(requestName: string, queryId?: string) {
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("requestName", requestName);
+
+    if (queryId) {
+      nextParams.set("queryId", queryId);
+    } else {
+      nextParams.delete("queryId");
+    }
+
     nextParams.delete("tenderId");
 
     if (activeSearchProfile) {
@@ -336,8 +426,14 @@ export function Sidebar({
     nextParams.set("profileId", profileId);
     nextParams.delete("tenderId");
 
-    if (nextProfile?.requestNames[0]) {
-      nextParams.set("requestName", nextProfile.requestNames[0]);
+    const nextQuery = nextProfile?.queries[0];
+
+    if (nextQuery) {
+      nextParams.set("requestName", nextQuery.name);
+      nextParams.set("queryId", nextQuery.id);
+    } else {
+      nextParams.delete("requestName");
+      nextParams.delete("queryId");
     }
 
     startTransition(() => {
@@ -357,6 +453,57 @@ export function Sidebar({
     });
   }
 
+  async function syncSabyStructure() {
+    if (isSyncingQueries) {
+      return;
+    }
+
+    if (!canSyncSabyStructure) {
+      setIsSyncError(true);
+      setSyncMessage(
+        "Синхронизация структуры доступна только в режиме Saby RPC. Сейчас проект запущен в другом режиме.",
+      );
+      return;
+    }
+
+    setIsSyncingQueries(true);
+    setSyncMessage(null);
+    setIsSyncError(false);
+
+    try {
+      const response = await fetch("/api/admin/saby/sync-structure", {
+        method: "POST",
+      });
+
+      const data = (await response.json()) as {
+        foldersCount?: number;
+        queriesCount?: number;
+        error?: { message?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          data.error?.message ?? "Не удалось синхронизировать структуру Saby.",
+        );
+      }
+
+      setSyncMessage(
+        `Синхронизация завершена: папок ${data.foldersCount ?? 0}, запросов ${data.queriesCount ?? 0}.`,
+      );
+      router.refresh();
+    } catch (error) {
+      setIsSyncError(true);
+      setSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось синхронизировать структуру Saby.",
+      );
+      console.error("Failed to sync Saby structure", error);
+    } finally {
+      setIsSyncingQueries(false);
+    }
+  }
+
   if (isCollapsed) {
     return (
       <aside className="flex h-full min-h-0 w-14 shrink-0 flex-col items-center border-r bg-background py-3">
@@ -373,7 +520,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-r bg-background md:w-[21rem]">
+    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-r bg-background md:w-[21rem]">
       <div className="border-b px-4 py-2.5">
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2">
@@ -393,7 +540,7 @@ export function Sidebar({
               <div className="relative shrink-0" ref={settingsRef}>
                 <button
                   aria-expanded={isSettingsOpen}
-                  aria-label="Открыть настройки Saby и RequestName"
+                  aria-label="Открыть настройки Saby и профиля"
                   className="flex h-9 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => setIsSettingsOpen((value) => !value)}
                   ref={settingsButtonRef}
@@ -473,26 +620,45 @@ export function Sidebar({
                       </div>
                     </details>
 
-                    <details className="hidden group">
-                      <summary className="flex h-10 w-full cursor-pointer list-none items-center justify-between gap-2 rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">
-                        <span>Настроить RequestName</span>
-                        <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-                      </summary>
-                      <div className="mt-2 rounded-lg border bg-card p-3">
-                        <KeywordEditor
-                          availableRequestNames={availableSources.map((source) => source.requestName)}
-                          initialKeywords={initialKeywords}
-                        />
-                      </div>
-                    </details>
                     <details className="group">
                       <summary className="flex h-10 w-full cursor-pointer list-none items-center justify-between gap-2 rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">
-                        <span>SearchProfile</span>
+                        <span>Профиль и запросы</span>
                         <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                       </summary>
                       <div className="mt-2 rounded-lg border bg-card p-3">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            {canSyncSabyStructure
+                              ? "Для режима RPC сначала синхронизируйте структуру папок и запросов Saby."
+                              : "Синхронизация структуры недоступна: проект сейчас не в режиме Saby RPC."}
+                          </p>
+                          <button
+                            className="rounded-md border px-2.5 py-1 text-xs transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
+                            disabled={isSyncingQueries || !canSyncSabyStructure}
+                            onClick={syncSabyStructure}
+                            type="button"
+                          >
+                            {isSyncingQueries
+                              ? "Синхронизирую..."
+                              : "Синхронизировать Saby"}
+                          </button>
+                        </div>
+
+                        {syncMessage ? (
+                          <div
+                            className={[
+                              "mb-3 rounded-md border px-3 py-2 text-xs",
+                              isSyncError
+                                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                                : "border-emerald-300 bg-emerald-50 text-emerald-700",
+                            ].join(" ")}
+                          >
+                            {syncMessage}
+                          </div>
+                        ) : null}
+
                         <SearchProfileEditor
-                          availableSources={availableSources}
+                          availableQueries={availableQueries}
                           profile={activeSearchProfile}
                         />
                       </div>
@@ -505,6 +671,7 @@ export function Sidebar({
                 <RefreshTendersButton
                   compact
                   label="Обновить"
+                  queryId={activeQuery?.sabyQueryId}
                   requestName={activeRequestName}
                 />
               </div>
@@ -530,35 +697,44 @@ export function Sidebar({
                     </option>
                   ))}
                 </select>
-                {activeSearchProfile?.description ? (
-                  <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
-                    {activeSearchProfile.description}
-                  </p>
-                ) : null}
               </div>
             ) : null}
 
-            <div className="flex min-w-max gap-2">
-              {requestNames.map((requestName) => {
-                const isActive = requestName === activeRequestName;
+            <div className="space-y-2">
+              {navigationGroups.map((group) => (
+                <div key={group.title}>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {group.title}
+                  </div>
+                  <div className="flex min-w-max gap-2 overflow-x-auto">
+                    {group.items.map((item) => {
+                      const isActive = item.queryId
+                        ? item.queryId === activeQueryId
+                        : item.requestName === activeRequestName;
 
-                return (
-                  <button
-                    className={[
-                      "shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                      isActive
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "bg-card hover:bg-accent hover:text-accent-foreground",
-                    ].join(" ")}
-                    disabled={isPending}
-                    key={requestName}
-                    onClick={() => changeRequestName(requestName)}
-                    type="button"
-                  >
-                    {requestName}
-                  </button>
-                );
-              })}
+                      return (
+                        <button
+                          className={[
+                            "shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                            isActive
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "bg-card hover:bg-accent hover:text-accent-foreground",
+                          ].join(" ")}
+                          disabled={isPending}
+                          key={`${group.title}:${item.queryId ?? item.requestName}`}
+                          onClick={() =>
+                            changeNavigationTarget(item.requestName, item.queryId)
+                          }
+                          title={item.title ?? item.requestName}
+                          type="button"
+                        >
+                          {item.requestName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -611,32 +787,10 @@ export function Sidebar({
 
             {tenders.length === 0 ? (
               <div className="rounded-lg border border-dashed px-3 py-5 text-sm text-muted-foreground">
-                Тендеры по выбранному RequestName пока не найдены.
+                Тендеры по выбранному запросу пока не найдены.
               </div>
             ) : (
               <div className="space-y-3 pb-3">
-                <div className="hidden flex-wrap gap-2">
-                  {(["all", "relevant", "maybe", "irrelevant"] as const).map(
-                    (filterValue) => {
-                      const isActive = verdictFilter === filterValue;
-
-                      return (
-                        <button
-                          className={[
-                            "rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors",
-                            getVerdictFilterButtonClass(filterValue, isActive),
-                          ].join(" ")}
-                          key={filterValue}
-                          onClick={() => setVerdictFilter(filterValue)}
-                          type="button"
-                        >
-                          {formatVerdictFilterDisplayLabel(filterValue)}
-                        </button>
-                      );
-                    },
-                  )}
-                </div>
-
                 {visibleTenders.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-5 text-sm text-muted-foreground">
                     По активному профилю нет тендеров в этой категории.
@@ -645,9 +799,7 @@ export function Sidebar({
                   <nav aria-label="Список тендеров" className="w-full space-y-2">
                     {visibleTenders.map((tender) => {
                       const isActive = tender.id === activeTenderId;
-                      const deadline = dateFormatter.format(
-                        new Date(tender.deadline),
-                      );
+                      const deadline = dateFormatter.format(new Date(tender.deadline));
                       const effectiveVerdict =
                         tender.profileScore?.userVerdict ??
                         tender.profileScore?.verdict;
@@ -655,7 +807,7 @@ export function Sidebar({
                       return (
                         <button
                           className={[
-                            "block w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
+                            "block w-full min-w-0 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-colors",
                             isActive
                               ? "border-primary bg-primary text-primary-foreground"
                               : "bg-card hover:bg-accent hover:text-accent-foreground",
@@ -663,18 +815,21 @@ export function Sidebar({
                           disabled={isPending}
                           key={tender.id}
                           onMouseDown={(event) => {
-                            // Prevent mouse focus from nudging the scroll container
-                            // when the active tender changes. Keyboard focus still works.
                             event.preventDefault();
                           }}
                           onClick={() => openTender(tender.id)}
                           type="button"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <h2 className="line-clamp-2 text-sm font-semibold">
-                              {tender.title}
+                          <div>
+                            <h2 className="line-clamp-2 min-h-[2.8rem] text-sm font-semibold">
+                              {compactListLabel(tender.title)}
                             </h2>
-                            <div className="flex shrink-0 items-center gap-2">
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              {getRegulationBadgeLabel(tender) ? (
+                                <span className="shrink-0 rounded-md bg-background/70 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                                  {getRegulationBadgeLabel(tender)}
+                                </span>
+                              ) : null}
                               <span
                                 aria-label={
                                   effectiveVerdict
@@ -700,9 +855,9 @@ export function Sidebar({
                             {tender.customer}
                           </p>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold tabular-nums">
-                            {tender.number ? (
+                            {tender.sourcePlatformName ? (
                               <span className="inline-flex items-center rounded-md bg-background/70 px-2 py-0.5 text-muted-foreground">
-                                # {tender.number}
+                                {compactListLabel(tender.sourcePlatformName)}
                               </span>
                             ) : null}
                             {typeof tender.budget === "number" ? (
@@ -724,11 +879,6 @@ export function Sidebar({
                               </span>
                             ) : null}
                           </div>
-                          {tender.profileScore?.reasons[0] ? (
-                            <p className="mt-1.5 line-clamp-1 text-[11px] opacity-75">
-                              {tender.profileScore.reasons[0]}
-                            </p>
-                          ) : null}
                         </button>
                       );
                     })}

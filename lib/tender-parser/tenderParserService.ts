@@ -982,6 +982,12 @@ function findTenderLikeRecords(rawResult: unknown): TenderRecordSelection {
 }
 
 function pickExplicitTenderArray(rawResult: unknown): Array<Record<string, unknown>> {
+  const directRecordset = recordsetToObjectArray(rawResult);
+
+  if (directRecordset.length > 0) {
+    return directRecordset;
+  }
+
   const direct = toObjectArray(rawResult);
 
   if (direct.length > 0) {
@@ -1003,6 +1009,12 @@ function pickExplicitTenderArray(rawResult: unknown): Array<Record<string, unkno
   ];
 
   for (const key of directCandidateKeys) {
+    const recordsetArray = recordsetToObjectArray(record[key]);
+
+    if (recordsetArray.length > 0) {
+      return recordsetArray;
+    }
+
     const array = toObjectArray(record[key]);
 
     if (array.length > 0) {
@@ -1016,6 +1028,12 @@ function pickExplicitTenderArray(rawResult: unknown): Array<Record<string, unkno
     const nestedRecord = result as Record<string, unknown>;
 
     for (const key of directCandidateKeys) {
+      const recordsetArray = recordsetToObjectArray(nestedRecord[key]);
+
+      if (recordsetArray.length > 0) {
+        return recordsetArray;
+      }
+
       const array = toObjectArray(nestedRecord[key]);
 
       if (array.length > 0) {
@@ -1036,6 +1054,34 @@ function toObjectArray(value: unknown): Array<Record<string, unknown>> {
     (item): item is Record<string, unknown> =>
       !!item && typeof item === "object" && !Array.isArray(item),
   );
+}
+
+function recordsetToObjectArray(value: unknown): Array<Record<string, unknown>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const columns = Array.isArray(record.s)
+    ? record.s
+        .map((field) =>
+          field && typeof field === "object" && typeof (field as { n?: unknown }).n === "string"
+            ? (field as { n: string }).n
+            : null,
+        )
+        .filter((name): name is string => Boolean(name))
+    : [];
+  const rows = Array.isArray(record.d) ? record.d : [];
+
+  if (columns.length === 0 || rows.length === 0) {
+    return [];
+  }
+
+  return rows
+    .filter((row): row is unknown[] => Array.isArray(row))
+    .map((row) =>
+      Object.fromEntries(columns.map((column, index) => [column, row[index]])),
+    );
 }
 
 interface TenderRecordSelection {
@@ -1121,6 +1167,8 @@ function mapRecordToTender(
 ): Tender | null {
   const titleRaw = pickField(record, [
     "title",
+    "tendername",
+    "lotname",
     "Название",
     "Наименование",
     "Предмет",
@@ -1144,15 +1192,23 @@ function mapRecordToTender(
     "РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ",
     "TenderID",
     "tenderId",
+    "tendernumber",
     "РќРѕРјРµСЂ",
     "number",
   ]);
   const id = toNonEmptyString(idRaw) ?? `saby-tender-${index + 1}`;
-  const numberRaw = pickField(record, ["Номер", "РќРѕРјРµСЂ", "number"]);
+  const numberRaw = pickField(record, [
+    "tendernumber",
+    "Номер",
+    "РќРѕРјРµСЂ",
+    "number",
+  ]);
   const number = toNonEmptyString(numberRaw);
 
   const descriptionRaw = pickField(record, [
     "description",
+    "tendername",
+    "lotname",
     "Описание",
     "КраткоеОписание",
     "Детали",
@@ -1165,6 +1221,8 @@ function mapRecordToTender(
 
   const customerRaw = pickField(record, [
     "customer",
+    "organizername",
+    "organizerfullname",
     "Заказчик",
     "Организатор",
     "Р—Р°РєР°Р·С‡РёРє",
@@ -1179,6 +1237,10 @@ function mapRecordToTender(
   const customer = toNonEmptyString(customerRaw) ?? "Не указан";
 
   const placedAtRaw = pickField(record, [
+    "publishdate",
+    "creationdate",
+    "actual_sort_date",
+    "created_at",
     "publish_date",
     "publishDate",
     "createdAt",
@@ -1199,6 +1261,7 @@ function mapRecordToTender(
       "request_receiving_end_date",
       "request_receiving_end_alt_date",
       "request_receiving_date",
+      "endofferdate",
       "endDate",
       "end_date",
       "dueDate",
@@ -1235,6 +1298,52 @@ function mapRecordToTender(
     "amount",
   ]);
   const budget = normalizeBudget(budgetRaw);
+
+  const procurementType = toNonEmptyString(
+    pickField(record, [
+      "proctype_name",
+      "proctype",
+      "procurementtype",
+      "tendertype",
+      "ТипЗакупки",
+      "ВидЗакупки",
+    ]),
+  );
+  const procurementTypeBrief = toNonEmptyString(
+    pickField(record, [
+      "proctype_brief",
+      "procurementtypebrief",
+      "ТипЗакупкиКратко",
+    ]),
+  );
+  const sourcePlatformName = toNonEmptyString(
+    pickField(record, [
+      "tpbrief",
+      "tradingplatformname",
+      "platformname",
+      "ЭТП",
+      "Площадка",
+      "ИсточникПлощадка",
+    ]),
+  );
+  const sourcePlatformUrl = normalizeOptionalUrl(
+    pickField(record, [
+      "tradingplatformurl",
+      "platformurl",
+      "sourceplatformurl",
+      "urltp",
+    ]),
+    id,
+  );
+  const regulationName = toNonEmptyString(
+    pickField(record, [
+      "tptypename",
+      "regulationname",
+      "lawname",
+      "ТипТорговойПлощадки",
+      "Закон",
+    ]),
+  );
 
   const sourceUrlRaw = pickField(record, [
     "external_url",
@@ -1276,6 +1385,11 @@ function mapRecordToTender(
     url,
     ...(sourceUrl ? { sourceUrl } : {}),
     ...(sabyUrl ? { sabyUrl } : {}),
+    ...(procurementType ? { procurementType } : {}),
+    ...(procurementTypeBrief ? { procurementTypeBrief } : {}),
+    ...(sourcePlatformName ? { sourcePlatformName } : {}),
+    ...(sourcePlatformUrl ? { sourcePlatformUrl } : {}),
+    ...(regulationName ? { regulationName } : {}),
     attachments,
     ...(typeof budget === "number" ? { budget } : {}),
   };
@@ -1662,6 +1776,16 @@ function normalizeUrl(value: unknown, tenderId: string): string {
   }
 
   return `${DEFAULT_SABY_BASE_URL}/?tender=${encodeURIComponent(tenderId)}`;
+}
+
+function normalizeOptionalUrl(value: unknown, tenderId: string): string | undefined {
+  const raw = toNonEmptyString(value);
+
+  if (!raw) {
+    return undefined;
+  }
+
+  return normalizeUrl(raw, tenderId);
 }
 
 function filterTendersByKeywords(tenders: Tender[], keywords: string[]): Tender[] {

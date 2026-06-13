@@ -51,5 +51,13 @@ function normalizeStats(result) {
   const payload = JSON.parse(fs.readFileSync('tmp-tender-getlist-live.json','utf8'));
   const res = await post('https://trade.saby.ru/service/?x_version=26.3202-36.4', payload, sid);
   console.log('tender_get_list_RESULT ' + JSON.stringify({ count: res?.result?.r?.d?.[0], firstId: res?.result?.d?.[0]?.[0] }));
+  const columns = Array.isArray(res?.result?.s) ? res.result.s.map((item) => item.n) : [];
+  const rows = Array.isArray(res?.result?.d) ? res.result.d : [];
+  console.log('tender_get_list_COLUMNS ' + JSON.stringify(columns));
+  console.log('tender_get_list_ROWS ' + rows.length);
+  if (rows[0]) {
+    const firstRow = Object.fromEntries(columns.map((name, index) => [name, rows[0][index]]));
+    console.log('tender_get_list_FIRST_ROW ' + JSON.stringify(firstRow));
+  }
   await getStats('after_tender_get_list');
 })();

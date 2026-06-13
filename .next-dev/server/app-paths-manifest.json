@@ -1,7 +1,0 @@
-{
-  "/page": "app/page.js",
-  "/api/chat/route": "app/api/chat/route.js",
-  "/api/conversations/[tenderExternalId]/route": "app/api/conversations/[tenderExternalId]/route.js",
-  "/api/tenders/route": "app/api/tenders/route.js",
-  "/api/conversations/route": "app/api/conversations/route.js"
-}

@@ -1,8 +1,7 @@
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { Sidebar } from "@/components/layout/sidebar";
-import type { KeywordDto } from "@/types/keyword.dto";
 import type { SabyApiCallLogEntry } from "@/types/saby-api-log.dto";
-import type { SabySourceDto } from "@/types/saby-source.dto";
+import type { SabyQueryDto } from "@/types/saby-query.dto";
 import type { SearchProfileDto } from "@/types/search-profile.dto";
 import type {
   SabyDailyLimitStatistics,
@@ -10,11 +9,11 @@ import type {
 } from "@/types/tender-parser.dto";
 
 interface AppShellProps {
-  initialKeywords: KeywordDto[];
   tenders: Tender[];
   activeTender?: Tender;
-  requestNames: string[];
-  availableSources: SabySourceDto[];
+  activeQueryId?: string;
+  availableQueries: SabyQueryDto[];
+  canSyncSabyStructure: boolean;
   activeRequestName: string;
   searchProfiles: SearchProfileDto[];
   activeSearchProfile?: SearchProfileDto;
@@ -25,11 +24,11 @@ interface AppShellProps {
 }
 
 export function AppShell({
-  initialKeywords,
   tenders,
   activeTender,
-  requestNames,
-  availableSources,
+  activeQueryId,
+  availableQueries,
+  canSyncSabyStructure,
   activeRequestName,
   searchProfiles,
   activeSearchProfile,
@@ -43,15 +42,15 @@ export function AppShell({
     tenders.find((tender) => tender.id === activeTenderId);
 
   return (
-    <main className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-background text-foreground md:flex-row">
+    <main className="flex h-[100dvh] min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground md:flex-row">
       <Sidebar
+        activeQueryId={activeQueryId}
         activeTenderId={resolvedActiveTender?.id}
         activeRequestName={activeRequestName}
         activeSearchProfile={activeSearchProfile}
-        availableSources={availableSources}
-        initialKeywords={initialKeywords}
+        availableQueries={availableQueries}
+        canSyncSabyStructure={canSyncSabyStructure}
         recentSabyApiCalls={recentSabyApiCalls}
-        requestNames={requestNames}
         sabyDailyLimitStatistics={sabyDailyLimitStatistics}
         searchProfiles={searchProfiles}
         tendersLoadError={tendersLoadError}
